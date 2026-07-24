@@ -1,0 +1,59 @@
+[
+  {
+    "id": "hardware",
+    "label": "Hardware",
+    "color": "#e07a5f",
+    "keywords": [
+      "hardware", "pcb", "robotics", "robot", "fpga", "semiconductor", "chip", "chips",
+      "silicon", "asic", "embedded", "iot", "sensor", "sensors", "drone", "drones",
+      "electronics", "soldering", "maker", "makerspace", "3d printing", "cnc",
+      "manufacturing", "prototyping", "wearable", "wearables", "battery", "photonics",
+      "quantum hardware", "device", "devices", "circuit", "circuits", "arduino",
+      "raspberry pi", "microcontroller", "mems"
+    ]
+  },
+  {
+    "id": "vc",
+    "label": "VC / Early-stage",
+    "color": "#3d5a80",
+    "keywords": [
+      "vc", "venture capital", "venture", "investor", "investors", "angel", "angels",
+      "seed", "pre-seed", "preseed", "series a", "demo day", "pitch", "pitching",
+      "founders", "founder", "fundraising", "fundraise", "raising", "startup",
+      "startups", "accelerator", "incubator", "yc", "y combinator", "term sheet",
+      "cap table", "office hours", "lp", "limited partner", "deal flow", "portfolio"
+    ]
+  },
+  {
+    "id": "math",
+    "label": "Mathematics",
+    "color": "#81b29a",
+    "keywords": [
+      "math", "mathematics", "mathematical", "topology", "category theory",
+      "number theory", "proof", "proofs", "theorem", "combinatorics", "algebra",
+      "geometry", "calculus", "analysis", "probability", "statistics", "statistical",
+      "optimization", "graph theory", "cryptography", "logic", "set theory",
+      "differential", "linear algebra", "abstract algebra"
+    ]
+  },
+  {
+    "id": "software",
+    "label": "Software",
+    "color": "#f2cc8f",
+    "keywords": [
+      "software", "api", "apis", "kubernetes", "k8s", "docker", "rust", "golang",
+      "typescript", "javascript", "python", "react", "node", "backend", "frontend",
+      "full stack", "fullstack", "devops", "ci/cd", "database", "postgres", "distributed",
+      "microservices", "web dev", "webdev", "cloud", "serverless", "ai", "ml",
+      "machine learning", "llm", "llms", "gpt", "deep learning", "data science",
+      "developer", "developers", "coding", "hackathon", "open source", "programming",
+      "compiler", "security", "cybersecurity", "blockchain", "web3", "crypto"
+    ]
+  },
+  {
+    "id": "tech",
+    "label": "Tech (general)",
+    "color": "#8d99ae",
+    "keywords": []
+  }
+]

@@ -1,0 +1,33 @@
+# Local dev secrets for `wrangler dev`. Copy to `.dev.vars` (gitignored) and fill in.
+# In production these are set with `wrangler secret put <NAME>` (never committed).
+
+# Bearer token the local scraper uses to POST scraped events to /api/admin/ingest
+INGEST_TOKEN=dev-ingest-token
+
+# "1" enables the passwordless dev quick-login (LOCAL ONLY — never set in prod)
+DEV_LOGIN=1
+
+# ── Optional integrations (features degrade gracefully when unset) ─────────────
+# Cloudflare Access (email one-time-PIN login) — from your Zero Trust dashboard
+# ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
+# ACCESS_AUD=<application-audience-tag>
+
+# Web push (generate with `npx web-push generate-vapid-keys`)
+# VAPID_PUBLIC_KEY=
+# VAPID_PRIVATE_KEY=
+# VAPID_SUBJECT=mailto:hello@thebay.events
+
+# Media (Cloudflare Images / Stream)
+# CF_ACCOUNT_ID=
+# IMAGES_TOKEN=
+# STREAM_TOKEN=
+
+# Email magic-link (Resend) — optional alternative login
+# RESEND_API_KEY=
+# EMAIL_FROM=hello@thebay.events
+
+# OAuth (optional) — register apps at Google / GitHub
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=
+# GITHUB_CLIENT_ID=
+# GITHUB_CLIENT_SECRET=

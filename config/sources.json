@@ -1,0 +1,292 @@
+[
+  {
+    "id": "luma-bay",
+    "type": "luma",
+    "enabled": true,
+    "note": "Luma's SF slug is regional — returns the whole Bay (SF, Oakland, Palo Alto, San Jose, Stanford...).",
+    "params": { "mode": "discover", "slug": "sf", "maxPages": 15 }
+  },
+  {
+    "id": "luma-bay-categories",
+    "type": "luma",
+    "enabled": true,
+    "note": "Luma category sweeps anchored on SF coords (from cities.json sf-bay).",
+    "params": { "mode": "discover", "slugs": ["ai", "tech", "crypto", "climate"], "city": "sf-bay", "maxPages": 8 }
+  },
+  {
+    "id": "luma-southbay-categories",
+    "type": "luma",
+    "enabled": true,
+    "note": "Extra South Bay depth — same categories anchored on San Jose coords. Overlap is deduped.",
+    "params": { "mode": "discover", "slugs": ["ai", "tech"], "latitude": 37.3382, "longitude": -121.8863, "maxPages": 6 }
+  },
+  {
+    "id": "luma-example-calendar",
+    "type": "luma",
+    "enabled": false,
+    "note": "Example: paste any lu.ma/<slug> calendar URL here and flip enabled=true.",
+    "params": { "mode": "calendar", "url": "https://lu.ma/sf", "period": "future", "maxPages": 12 }
+  },
+
+  {
+    "id": "eb-hubs",
+    "type": "eventbrite",
+    "enabled": true,
+    "note": "DEEP coverage of the dense event hubs — the highest-priority tech terms, many pages each.",
+    "params": {
+      "mode": "scrape",
+      "locations": [
+        "ca--san-francisco", "ca--oakland", "ca--san-jose", "ca--palo-alto", "ca--berkeley"
+      ],
+      "queries": [
+        "science-and-technology", "technology", "startup", "founders",
+        "ai", "software", "hardware"
+      ],
+      "maxPages": 6
+    }
+  },
+  {
+    "id": "eb-corridor",
+    "type": "eventbrite",
+    "enabled": true,
+    "note": "MEDIUM coverage of the dense mid-size Bay cities (peninsula + south + east bay).",
+    "params": {
+      "mode": "scrape",
+      "locations": [
+        "ca--san-mateo", "ca--redwood-city", "ca--menlo-park", "ca--mountain-view",
+        "ca--sunnyvale", "ca--santa-clara", "ca--cupertino", "ca--milpitas",
+        "ca--fremont", "ca--hayward", "ca--daly-city", "ca--south-san-francisco",
+        "ca--walnut-creek", "ca--richmond"
+      ],
+      "queries": ["science-and-technology", "technology", "startup", "ai"],
+      "maxPages": 3
+    }
+  },
+  {
+    "id": "eb-trainstops",
+    "type": "eventbrite",
+    "enabled": true,
+    "note": "LIGHT coverage of every remaining Caltrain + BART stop town — if the train stops there, we check it.",
+    "params": {
+      "mode": "scrape",
+      "locations": [
+        "ca--san-bruno", "ca--millbrae", "ca--burlingame", "ca--belmont", "ca--san-carlos",
+        "ca--colma", "ca--foster-city", "ca--los-altos",
+        "ca--campbell", "ca--los-gatos", "ca--saratoga", "ca--morgan-hill", "ca--gilroy",
+        "ca--el-cerrito", "ca--alameda", "ca--emeryville", "ca--san-leandro", "ca--union-city",
+        "ca--castro-valley", "ca--concord", "ca--pleasant-hill", "ca--lafayette", "ca--orinda",
+        "ca--pleasanton", "ca--dublin", "ca--livermore"
+      ],
+      "queries": ["technology", "startup"],
+      "maxPages": 1
+    }
+  },
+  {
+    "id": "eb-terms",
+    "type": "eventbrite",
+    "enabled": true,
+    "note": "COMPREHENSIVE tech-term taxonomy at north + south anchors — the long tail across every tech subfield.",
+    "params": {
+      "mode": "scrape",
+      "locations": ["ca--san-francisco", "ca--san-jose"],
+      "queries": [
+        "tech", "startups", "entrepreneurship", "innovation", "tech-networking",
+        "venture-capital", "angel-investors", "fundraising", "demo-day", "pitch",
+        "developer", "software-engineering", "engineering", "programming",
+        "devops", "cloud-computing", "saas", "open-source", "cybersecurity",
+        "blockchain", "web3", "crypto",
+        "artificial-intelligence", "machine-learning", "deep-learning", "generative-ai",
+        "data-science", "llm",
+        "robotics", "semiconductor", "electronics", "iot",
+        "deep-tech", "quantum-computing",
+        "biotech", "fintech", "healthtech", "climate-tech",
+        "mathematics", "hackathon", "product-management"
+      ],
+      "maxPages": 2
+    }
+  },
+  {
+    "id": "eb-bay-browser",
+    "type": "eventbrite",
+    "enabled": false,
+    "note": "Playwright browser-discovery fallback (drives search UI + scroll). Enable if the fetch path gets challenged.",
+    "params": {
+      "mode": "browser",
+      "locations": ["ca--san-francisco", "ca--san-jose"],
+      "queries": ["technology", "startup"],
+      "maxPages": 5
+    }
+  },
+
+  {
+    "id": "airtable-example-api",
+    "type": "airtable",
+    "enabled": false,
+    "note": "Example: an Airtable base you own (needs AIRTABLE_TOKEN). Adjust fieldMap to your columns.",
+    "params": {
+      "mode": "api",
+      "baseId": "appXXXXXXXXXXXXXX",
+      "table": "Events",
+      "view": "Grid view",
+      "fieldMap": {
+        "title": "Name", "startRaw": "Date", "endRaw": "End", "url": "Link",
+        "venueName": "Venue", "address": "Address", "city": "City",
+        "description": "Description", "organizer": "Host"
+      }
+    }
+  },
+  {
+    "id": "partiful-sf",
+    "type": "partiful",
+    "enabled": true,
+    "note": "Partiful public SF explore feed (no auth). Parties, mixers, founder dinners.",
+    "params": { "city": "sf" }
+  },
+
+  {
+    "id": "meetup-groups",
+    "type": "ical",
+    "enabled": true,
+    "note": "Public iCal feeds for active SF Bay tech Meetup groups (AI/ML, data, software, hardware).",
+    "params": {
+      "urls": [
+        "https://www.meetup.com/sf-bay-area-ai-meetup-group/events/ical/",
+        "https://www.meetup.com/san-francisco-ai-ml-meetup-group/events/ical/",
+        "https://www.meetup.com/san-francisco-frontier-tech-meetup/events/ical/",
+        "https://www.meetup.com/ai-builders-and-learners-sf/events/ical/",
+        "https://www.meetup.com/sfbay-ai/events/ical/",
+        "https://www.meetup.com/aittg-sfsv/events/ical/",
+        "https://www.meetup.com/san-francisco-ai-llms/events/ical/",
+        "https://www.meetup.com/bay-area-machine-learning-meetups/events/ical/",
+        "https://www.meetup.com/sf-big-analytics/events/ical/",
+        "https://www.meetup.com/bay-area-apache-airflow-incubating-meetup/events/ical/",
+        "https://www.meetup.com/data-science-and-engineering-club/events/ical/",
+        "https://www.meetup.com/sfpython/events/ical/",
+        "https://www.meetup.com/sfnode/events/ical/",
+        "https://www.meetup.com/golangsf/events/ical/",
+        "https://www.meetup.com/papers-we-love-too/events/ical/",
+        "https://www.meetup.com/sfhtml5/events/ical/",
+        "https://www.meetup.com/noisebridge/events/ical/",
+        "https://www.meetup.com/hackerdojo/events/ical/",
+        "https://www.meetup.com/bay-area-ai/events/ical/",
+        "https://www.meetup.com/sanfrancisco-ai/events/ical/",
+        "https://www.meetup.com/san-francisco-and-bay-area-data-and-ai/events/ical/"
+      ]
+    }
+  },
+  {
+    "id": "meetup-find",
+    "type": "html",
+    "enabled": true,
+    "note": "Meetup city 'find' pages (SF-filtered) — each server-renders JSON-LD Event blocks per topic.",
+    "params": {
+      "urls": [
+        "https://www.meetup.com/find/us--ca--san-francisco/machine-learning/",
+        "https://www.meetup.com/find/us--ca--san-francisco/data-science/",
+        "https://www.meetup.com/find/us--ca--san-francisco/web-development/",
+        "https://www.meetup.com/find/us--ca--san-francisco/blockchain/",
+        "https://www.meetup.com/find/us--ca--san-francisco/robotics/",
+        "https://www.meetup.com/find/us--ca--san-francisco/career-business/",
+        "https://www.meetup.com/find/us--ca--san-francisco/devops/"
+      ]
+    }
+  },
+  {
+    "id": "luma-communities",
+    "type": "luma",
+    "enabled": true,
+    "note": "Curated SF/Bay tech community Luma calendars (AI, hardware, founders, deep tech).",
+    "params": {
+      "mode": "calendar",
+      "period": "future",
+      "maxPages": 5,
+      "urls": [
+        "https://luma.com/genai-sf",
+        "https://luma.com/ai-sf",
+        "https://luma.com/ai-plus",
+        "https://luma.com/genai-collective",
+        "https://luma.com/southparkcommons-events",
+        "https://luma.com/fdotinc",
+        "https://luma.com/sf-hardware-meetup",
+        "https://luma.com/sf-builders-collective",
+        "https://luma.com/bayareafoundersclub",
+        "https://luma.com/foundersbay",
+        "https://luma.com/developer-events",
+        "https://luma.com/frontiertower",
+        "https://luma.com/viva.city",
+        "https://luma.com/Sftechevents",
+        "https://luma.com/agi-house",
+        "https://luma.com/sj-hardware-meetup",
+        "https://luma.com/oak-hardware-meetup"
+      ]
+    }
+  },
+  {
+    "id": "university-cals",
+    "type": "ical",
+    "enabled": true,
+    "note": "University event calendars (Stanford + UC Berkeley) — many entrepreneurship/CS events.",
+    "params": {
+      "urls": [
+        "https://events.stanford.edu/calendar.ics",
+        "https://events.berkeley.edu/live/ical/events"
+      ]
+    }
+  },
+
+  {
+    "id": "airtable-sf-events",
+    "type": "airtable",
+    "enabled": true,
+    "note": "Kyosuke Togami's curated SF events. He ships a NEW Airtable each edition via Substack, so we auto-discover the latest from his feed (falling back to the shareUrl). Scraped via the browser DOM.",
+    "params": {
+      "mode": "share",
+      "discoverFrom": "https://kyosuketogami.substack.com/feed",
+      "shareUrl": "https://airtable.com/appoMfnDOmZVunr93/shrqoB85Ikv3uXmiF",
+      "fieldMap": {
+        "title": "Name",
+        "startRaw": "Date&Time",
+        "city": "Location",
+        "organizer": "Host",
+        "description": "Additional Info",
+        "url": "Link"
+      }
+    }
+  },
+  {
+    "id": "airtable-example-share",
+    "type": "airtable",
+    "enabled": false,
+    "note": "Template for another public Airtable shared view/base. Paste its URL + column names.",
+    "params": {
+      "mode": "share",
+      "shareUrl": "https://airtable.com/appXXXX/shrXXXX/tblXXXX/viwXXXX",
+      "fieldMap": { "title": "Name", "startRaw": "Date", "url": "Link", "city": "Location" }
+    }
+  },
+  {
+    "id": "generic-json-example",
+    "type": "generic-json",
+    "enabled": false,
+    "note": "Example: any JSON events endpoint. itemsPath is a dot-path to the array; fieldMap maps keys.",
+    "params": {
+      "url": "https://api.example.com/events",
+      "itemsPath": "data.events",
+      "fieldMap": { "title": "name", "startRaw": "starts_at", "endRaw": "ends_at", "url": "permalink", "venueName": "venue.name", "city": "venue.city" }
+    }
+  },
+  {
+    "id": "html-example",
+    "type": "html",
+    "enabled": false,
+    "note": "Example: any events page. Uses schema.org JSON-LD first; set useBrowser=true for JS-rendered pages.",
+    "params": { "url": "https://example.org/events", "useBrowser": false }
+  },
+  {
+    "id": "sample-ics",
+    "type": "ical",
+    "enabled": false,
+    "note": "Local fixture for offline testing. Disabled so the dashboard shows only real events.",
+    "params": { "url": "./fixtures/sample.ics" }
+  }
+]

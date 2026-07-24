@@ -1,0 +1,37 @@
+# Security headers on every asset response (the Worker sets these for /api,/auth,/app;
+# static assets are served by the asset layer, so they need them here too).
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+
+# HTML must always be fresh — it references content-hashed asset URLs.
+/
+  Cache-Control: no-store
+/index.html
+  Cache-Control: no-store
+/embed
+  Cache-Control: no-store
+/embed.html
+  Cache-Control: no-store
+
+# Content-hashed JS/CSS are immutable under their URL — cache hard.
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+# Free, open API — any origin (humans, agents, other sites), short cache.
+/events.json
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, OPTIONS
+  Cache-Control: public, max-age=1800
+  Content-Type: application/json; charset=utf-8
+
+/llms.txt
+  Access-Control-Allow-Origin: *
+  Content-Type: text/plain; charset=utf-8
+
+/sitemap.xml
+  Content-Type: application/xml; charset=utf-8

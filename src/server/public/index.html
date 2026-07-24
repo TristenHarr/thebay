@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Bay — Every SF Bay Area Tech Event | thebay.events</title>
+    <meta name="description" content="The most comprehensive, instantly-filterable calendar of SF Bay Area tech events — AI, hardware, VC &amp; startups, software, math. Scraped daily from Luma, Eventbrite, Partiful, Meetup &amp; more. Plan your trip, build an itinerary, and share it." />
+    <meta name="keywords" content="SF tech events, San Francisco tech events, Bay Area tech events, AI events San Francisco, startup events SF, VC events, hardware meetups, hackathons SF, tech calendar, Silicon Valley events, founder events, Luma SF, Eventbrite tech, Partiful, tech week" />
+    <link rel="canonical" href="https://thebay.events/" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="theme-color" content="#0b0f16" />
+    <meta name="author" content="The Bay" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="The Bay" />
+    <meta property="og:title" content="The Bay — Every SF Bay Area Tech Event" />
+    <meta property="og:description" content="The most comprehensive, filterable calendar of SF Bay Area tech events — AI, hardware, VC, startups, software. Plan a trip, build an itinerary, share it." />
+    <meta property="og:url" content="https://thebay.events/" />
+    <meta property="og:image" content="https://thebay.events/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The Bay — every SF Bay Area tech event, one filterable feed" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="The Bay — Every SF Bay Area Tech Event" />
+    <meta name="twitter:description" content="Every SF Bay tech event, one filterable feed. Plan a trip, build an itinerary, share it. 📡" />
+    <meta name="twitter:image" content="https://thebay.events/og-image.png" />
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>" />
+    <link rel="stylesheet" href="/styles.css" />
+    <!-- Free, open events API — discoverable by agents & feed readers -->
+    <link rel="alternate" type="application/json" title="The Bay — Events API (JSON)" href="/events.json" />
+    <link rel="alternate" type="text/plain" title="llms.txt — for AI agents" href="/llms.txt" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "The Bay",
+        "alternateName": "The Bay — SF Bay Area Tech Events",
+        "url": "https://thebay.events/",
+        "description": "The most comprehensive, filterable calendar of SF Bay Area tech events.",
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "https://thebay.events/#q={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }
+      }
+    </script>
+    <!--LD_EVENTS-->
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">📡</span>
+        <div>
+          <h1>The&nbsp;Bay <span class="brand-dot">·</span> Tech Events</h1>
+          <p class="tagline">Every SF Bay Area tech event, one filterable feed. <span id="updated" class="muted"></span></p>
+        </div>
+      </div>
+      <div class="topbar-controls">
+        <a class="app-cta" href="/app" title="Sign in — RSVP, see friends' events, map, groups & chat">✦ Open the app</a>
+        <input id="search" type="search" placeholder="Search title, org, venue, description…" autocomplete="off" />
+        <div class="sortgroup" id="sort">
+          <button data-sort="soonest" class="active">Soonest</button>
+          <button data-sort="interesting">Most interesting</button>
+          <button data-sort="newest">Newest</button>
+        </div>
+        <div class="trip-wrap">
+          <button id="trip-btn" class="btn-ghost" title="Plan a trip">🧳 Plan a trip</button>
+          <div id="trip-panel" class="trip-panel" hidden>
+            <h4>Plan your Bay Area trip</h4>
+            <p class="muted">Tell us when you're in town — we'll show every event during your stay.</p>
+            <div class="trip-dates">
+              <label>Arrive<input id="trip-from" type="date" /></label>
+              <span class="trip-arrow">→</span>
+              <label>Depart<input id="trip-to" type="date" /></label>
+            </div>
+            <div class="trip-actions">
+              <button id="trip-apply" class="btn-primary">Show my trip</button>
+              <button id="trip-clear" class="btn-ghost">Clear</button>
+            </div>
+          </div>
+        </div>
+        <button id="theme" class="iconbtn-lg" title="Toggle light / dark">☾</button>
+        <button id="rescrape" class="btn-primary" title="Scrape all sources now">↻ Scrape</button>
+      </div>
+    </header>
+
+    <div id="sources-health" class="sources-health"></div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <section class="filter-block">
+          <h3>When</h3>
+          <div id="date-chips" class="date-chips">
+            <button data-date="today">Today</button>
+            <button data-date="weekend">This weekend</button>
+            <button data-date="7d">Next 7 days</button>
+            <button data-date="30d" class="active">Next 30 days</button>
+            <button data-date="upcoming">All upcoming</button>
+            <button data-date="all">Everything</button>
+            <button data-date="custom">Custom…</button>
+          </div>
+          <div id="custom-dates" class="custom-dates" hidden>
+            <label>From <input id="from" type="date" /></label>
+            <label>To <input id="to" type="date" /></label>
+          </div>
+        </section>
+
+        <section class="filter-block">
+          <h3>Time of day</h3>
+          <div id="time-chips" class="date-chips">
+            <button data-time="any" class="active">Any</button>
+            <button data-time="morning">🌅 Morning</button>
+            <button data-time="afternoon">☀️ Afternoon</button>
+            <button data-time="evening">🌆 Evening</button>
+          </div>
+        </section>
+
+        <section class="filter-block">
+          <div class="filter-head"><h3>Categories</h3><button class="clearbtn" data-clear="cats">clear</button></div>
+          <div id="f-categories" class="chips"></div>
+        </section>
+
+        <section class="filter-block">
+          <div class="filter-head"><h3>Cities</h3><button class="clearbtn" data-clear="cities">clear</button></div>
+          <div id="f-cities" class="chips"></div>
+        </section>
+
+        <section class="filter-block">
+          <div class="filter-head"><h3>Sources</h3><button class="clearbtn" data-clear="sources">clear</button></div>
+          <div id="f-sources" class="chips"></div>
+        </section>
+
+        <section class="filter-block">
+          <h3>Refine</h3>
+          <label class="slider-row">Min interest <output id="minScoreOut">0</output>
+            <input id="minScore" type="range" min="0" max="100" step="5" value="0" />
+          </label>
+          <label class="toggle" id="curated-toggle" hidden><input type="checkbox" id="curated" /> ✦ Curated picks only</label>
+          <label class="toggle"><input type="checkbox" id="free" /> Free only</label>
+          <label class="toggle"><input type="checkbox" id="starred" /> ★ Starred only</label>
+          <label class="toggle"><input type="checkbox" id="includeHidden" /> Show hidden</label>
+        </section>
+      </aside>
+
+      <main class="main">
+        <div id="curator-spotlight" class="curator-spotlight" hidden></div>
+        <div id="curator-archive" class="curator-archive" hidden></div>
+        <div id="trip-banner" class="trip-banner" hidden></div>
+        <div id="itinerary-bar" class="itinerary-bar" hidden></div>
+        <div id="summary" class="summary"></div>
+        <div id="events" class="events"></div>
+        <div id="empty" class="empty" hidden>
+          <p>No events match these filters.</p>
+          <p class="muted">Try widening the date range or clearing a filter.</p>
+        </div>
+      </main>
+    </div>
+
+    <footer class="site-foot">
+      <div class="foot-brand"><span class="logo">📡</span> <strong>The Bay</strong> — every SF Bay Area tech event, one filterable feed.</div>
+      <div class="foot-api">
+        <span class="foot-label">Free API — for humans &amp; agents:</span>
+        <a href="/events.json">events.json</a>
+        <a href="/llms.txt">llms.txt</a>
+        <a href="/embed">embed widget</a>
+        <a href="https://github.com/eventers" rel="noopener">how it works</a>
+      </div>
+      <div id="foot-curators" class="foot-curators"></div>
+      <div class="foot-note">Open data · scraped daily from Luma, Eventbrite, Partiful, Meetup, Airtable &amp; more · <span id="foot-count"></span></div>
+    </footer>
+
+    <div id="share-modal" class="share-modal" hidden>
+      <div class="share-box">
+        <div id="share-card" class="share-card"></div>
+        <div class="share-actions">
+          <button id="sc-download" class="btn-primary">⬇ Save image</button>
+          <button id="sc-copy" class="btn-ghost">🔗 Copy link</button>
+          <a id="sc-x" class="btn-ghost" target="_blank" rel="noopener">Share on 𝕏</a>
+          <button id="sc-print" class="btn-ghost">🖨 Print</button>
+          <button id="sc-close" class="btn-ghost">Close</button>
+        </div>
+      </div>
+    </div>
+    <script src="/qrcode.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

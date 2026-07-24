@@ -1,0 +1,24 @@
+[
+  {
+    "id": "sf-bay",
+    "label": "SF Bay Area",
+    "timezone": "America/Los_Angeles",
+    "latitude": 37.7749,
+    "longitude": -122.4194,
+    "aliases": [
+      "San Francisco", "SF", "S.F.", "SFO",
+      "Oakland", "Berkeley", "Emeryville", "Alameda", "Albany", "Piedmont",
+      "San Leandro", "Hayward", "Union City", "Newark", "Fremont", "Milpitas",
+      "Palo Alto", "East Palo Alto", "Menlo Park", "Atherton", "Stanford",
+      "Mountain View", "Los Altos", "Los Altos Hills", "Sunnyvale", "Santa Clara",
+      "San Jose", "Campbell", "Los Gatos", "Saratoga", "Cupertino", "Morgan Hill",
+      "Redwood City", "San Carlos", "Belmont", "San Mateo", "Foster City",
+      "Burlingame", "Millbrae", "San Bruno", "South San Francisco", "Daly City",
+      "Brisbane", "Pacifica", "Half Moon Bay", "Colma",
+      "Richmond", "El Cerrito", "San Ramon", "Dublin", "Pleasanton", "Livermore",
+      "Walnut Creek", "Concord", "Danville",
+      "South Bay", "Peninsula", "East Bay", "North Bay", "Bay Area",
+      "Silicon Valley", "SF Bay", "San Francisco Bay Area"
+    ]
+  }
+]

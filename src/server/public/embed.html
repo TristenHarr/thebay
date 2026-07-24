@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tech Events · SF Bay</title>
+    <style>
+      :root {
+        --ev-bg: #ffffff;
+        --ev-surface: #f6f7f9;
+        --ev-surface-2: #eef0f3;
+        --ev-border: #e4e7ec;
+        --ev-text: #16191f;
+        --ev-muted: #667085;
+        --ev-accent: #2563eb;
+        --ev-radius: 10px;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ev-bg: #0f1216; --ev-surface: #171b21; --ev-surface-2: #1e242c;
+          --ev-border: #2a313b; --ev-text: #e6e9ee; --ev-muted: #9aa4b2; --ev-accent: #62a8ff;
+        }
+      }
+      :root[data-theme="light"] {
+        --ev-bg: #ffffff; --ev-surface: #f6f7f9; --ev-surface-2: #eef0f3;
+        --ev-border: #e4e7ec; --ev-text: #16191f; --ev-muted: #667085; --ev-accent: #2563eb;
+      }
+      :root[data-theme="dark"] {
+        --ev-bg: #0f1216; --ev-surface: #171b21; --ev-surface-2: #1e242c;
+        --ev-border: #2a313b; --ev-text: #e6e9ee; --ev-muted: #9aa4b2; --ev-accent: #62a8ff;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background: var(--ev-bg); color: var(--ev-text);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: inherit; text-decoration: none; }
+      .ev { max-width: 760px; margin: 0 auto; padding: 14px 14px 28px; }
+
+      .ev-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+      .ev-title { display: flex; align-items: center; gap: 8px; }
+      .ev-title h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+      .ev-sub { color: var(--ev-muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+      .ev-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ev-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ev-accent) 22%, transparent); flex: none; }
+      .ev-meta { color: var(--ev-muted); font-size: 12px; display: flex; gap: 10px; align-items: baseline; }
+      #ev-count { color: var(--ev-text); font-weight: 600; }
+
+      .ev-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+      #ev-search {
+        flex: 1 1 180px; min-width: 140px; background: var(--ev-surface); border: 1px solid var(--ev-border);
+        color: var(--ev-text); border-radius: 8px; padding: 7px 11px; font-size: 13px; outline: none;
+      }
+      #ev-search:focus { border-color: var(--ev-accent); }
+      .ev-cats { display: flex; gap: 6px; flex-wrap: wrap; }
+      .ev-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+      .ev-seg { display: inline-flex; gap: 3px; background: var(--ev-surface); border: 1px solid var(--ev-border); border-radius: 8px; padding: 3px; flex-wrap: wrap; }
+      .ev-seg button { background: transparent; border: 0; color: var(--ev-muted); padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap; }
+      .ev-seg button:hover { color: var(--ev-text); }
+      .ev-seg button.on { background: var(--ev-accent); color: #fff; }
+      .ev-chip {
+        font-size: 12px; padding: 4px 10px; border-radius: 20px; cursor: pointer; user-select: none;
+        border: 1px solid var(--ev-border); background: var(--ev-surface); color: var(--ev-muted);
+        display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+      }
+      .ev-chip .cdot { width: 8px; height: 8px; border-radius: 3px; }
+      .ev-chip[aria-pressed="true"] { color: var(--ev-text); border-color: currentColor; background: var(--ev-surface-2); }
+
+      .ev-day { position: sticky; top: 0; z-index: 2; background: var(--ev-bg);
+        font-size: 12px; font-weight: 700; letter-spacing: 0.02em; padding: 8px 2px 6px;
+        border-bottom: 1px solid var(--ev-border); margin-top: 10px; }
+      .ev-day .n { color: var(--ev-muted); font-weight: 500; margin-left: 6px; }
+
+      .ev-item { display: grid; grid-template-columns: 66px 1fr; gap: 12px; padding: 9px 4px; border-bottom: 1px solid var(--ev-border); }
+      .ev-item:hover { background: var(--ev-surface); border-radius: 8px; }
+      .ev-time { font-variant-numeric: tabular-nums; color: var(--ev-accent); font-weight: 600; font-size: 13px; padding-top: 1px; }
+      .ev-name { font-weight: 600; line-height: 1.35; }
+      .ev-name a:hover { text-decoration: underline; }
+      .ev-row2 { color: var(--ev-muted); font-size: 12.5px; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .ev-badges { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+      .ev-badge { font-size: 10.5px; font-weight: 700; color: #12151a; padding: 1px 7px; border-radius: 20px; }
+      .ev-free { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: #2fb27a; color: #04120b; }
+
+      .ev-empty { color: var(--ev-muted); text-align: center; padding: 30px; }
+      .ev-foot { margin-top: 14px; text-align: center; }
+      .ev-foot a { color: var(--ev-accent); font-size: 13px; font-weight: 600; }
+      .ev-foot a:hover { text-decoration: underline; }
+      @media (max-width: 420px) { .ev-item { grid-template-columns: 56px 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div id="ev-root" class="ev">
+      <header class="ev-head">
+        <div class="ev-title">
+          <span class="ev-dot"></span>
+          <h1>Tech Events</h1>
+          <span class="ev-sub">SF Bay Area</span>
+        </div>
+        <div class="ev-meta"><span id="ev-count">…</span><span id="ev-updated"></span></div>
+      </header>
+      <div class="ev-controls">
+        <input id="ev-search" type="search" placeholder="Search events…" autocomplete="off" />
+      </div>
+      <div class="ev-filters">
+        <div id="ev-days" class="ev-seg">
+          <button data-day="all" class="on">All</button>
+          <button data-day="today">Today</button>
+          <button data-day="weekend">Weekend</button>
+          <button data-day="7d">7 days</button>
+          <button data-day="30d">30 days</button>
+        </div>
+        <div id="ev-times" class="ev-seg">
+          <button data-tod="any" class="on">Any time</button>
+          <button data-tod="morning">🌅 AM</button>
+          <button data-tod="afternoon">☀️ PM</button>
+          <button data-tod="evening">🌆 Eve</button>
+        </div>
+      </div>
+      <div id="ev-cats" class="ev-cats"></div>
+      <div id="ev-list" class="ev-list"></div>
+      <div id="ev-empty" class="ev-empty" hidden>No matching events.</div>
+      <footer class="ev-foot"><a id="ev-more" href="/" target="_blank" rel="noopener">See the full dashboard →</a></footer>
+    </div>
+    <!--EVENTERS_DATA-->
+    <script src="/embed.js"></script>
+  </body>
+</html>

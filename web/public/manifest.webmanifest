@@ -1,0 +1,15 @@
+{
+  "name": "The Bay — Founder Events",
+  "short_name": "The Bay",
+  "description": "Discover SF founder events, show up with intent, and turn attendance into introductions.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0e13",
+  "theme_color": "#0b0e13",
+  "categories": ["social", "productivity", "business"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

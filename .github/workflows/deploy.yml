@@ -1,0 +1,51 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allow manual "Run workflow"
+
+# Never run two production deploys at once.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Typecheck + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run typecheck:web
+      - run: npm test
+
+  deploy:
+    name: Deploy to Cloudflare
+    needs: verify # only deploy if the whole suite is green
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+
+      - name: Build the React app (/app)
+        run: npm run build-web
+      - name: Build the classic dashboard shell
+        run: npm run build-site
+
+      # The dashboard's event data is produced by the local scraper (residential IP
+      # required), not in CI — so preserve the live events.json instead of shipping
+      # an empty one. The daily local job refreshes the full dataset.
+      - name: Preserve live event data
+        run: curl -sf https://thebay.events/events.json -o dist/site/events.json || echo "no live events.json yet"
+
+      - name: Deploy worker + assets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -1,0 +1,197 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useGetNetworkGraphQuery } from "../../api";
+import { Spinner, PageHeader, EmptyState } from "../../ui/kit";
+
+type Node = { id: string; name: string; handle?: string; me?: boolean; x: number; y: number; vx: number; vy: number };
+type Edge = { a: string; b: string };
+
+/**
+ * Interactive founder graph — a force-directed layout of you + your connections,
+ * rendered on a canvas. Nodes repel, edges pull, everything drifts toward centre.
+ * Drag a node to reposition; hover to highlight its neighbourhood; click to open a
+ * profile. Deliberately hacker-flavoured: monospace labels, faint grid, glowing you.
+ */
+export function NetworkGraph() {
+  const { data, isLoading } = useGetNetworkGraphQuery();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const nav = useNavigate();
+  const [hover, setHover] = useState<string | null>(null);
+  const hoverRef = useRef<string | null>(null);
+  const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+
+  // Build a stable simulation model from the fetched graph. Seed positions on a
+  // ring (deterministic-ish jitter from the index) so the layout is reproducible.
+  const model = useMemo(() => {
+    const raw = data?.nodes || [];
+    const n = raw.length;
+    const nodes: Node[] = raw.map((d: any, i: number) => {
+      const a = (i / Math.max(1, n)) * Math.PI * 2;
+      return { id: d.id, name: d.name || d.handle || "—", handle: d.handle, me: d.me, x: Math.cos(a) * 140 + Math.sin(i * 7.13) * 20, y: Math.sin(a) * 140 + Math.cos(i * 3.7) * 20, vx: 0, vy: 0 };
+    });
+    const idx = new Map(nodes.map((nd) => [nd.id, nd]));
+    const edges: Edge[] = (data?.edges || []).filter((e: any) => idx.has(e.a) && idx.has(e.b));
+    const degree = new Map<string, number>();
+    for (const e of edges) { degree.set(e.a, (degree.get(e.a) || 0) + 1); degree.set(e.b, (degree.get(e.b) || 0) + 1); }
+    const adj = new Map<string, Set<string>>();
+    for (const e of edges) { (adj.get(e.a) || adj.set(e.a, new Set()).get(e.a)!).add(e.b); (adj.get(e.b) || adj.set(e.b, new Set()).get(e.b)!).add(e.a); }
+    return { nodes, edges, idx, degree, adj };
+  }, [data]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || model.nodes.length === 0) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    let raf = 0;
+    let alpha = 1; // cooling factor
+
+    const css = getComputedStyle(document.documentElement);
+    const accent = css.getPropertyValue("--accent").trim() || "#6366f1";
+    const gold = css.getPropertyValue("--gold").trim() || "#eab308";
+    const muted = css.getPropertyValue("--muted").trim() || "#8b8b9a";
+
+    function resize() {
+      const w = canvas!.clientWidth, h = canvas!.clientHeight;
+      canvas!.width = w * dpr; canvas!.height = h * dpr;
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+
+    function tick() {
+      const w = canvas!.width / dpr, h = canvas!.height / dpr;
+      const cx = w / 2, cy = h / 2;
+      const N = model.nodes;
+      // repulsion (O(n²) — fine for an ego network)
+      for (let i = 0; i < N.length; i++) {
+        for (let j = i + 1; j < N.length; j++) {
+          const a = N[i]!, b = N[j]!;
+          let dx = a.x - b.x, dy = a.y - b.y;
+          let d2 = dx * dx + dy * dy || 0.01;
+          const f = (2600 * alpha) / d2;
+          const d = Math.sqrt(d2);
+          const ux = dx / d, uy = dy / d;
+          a.vx += ux * f; a.vy += uy * f; b.vx -= ux * f; b.vy -= uy * f;
+        }
+      }
+      // spring attraction along edges
+      for (const e of model.edges) {
+        const a = model.idx.get(e.a)!, b = model.idx.get(e.b)!;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const f = (d - 90) * 0.015 * alpha;
+        const ux = dx / d, uy = dy / d;
+        a.vx += ux * f; a.vy += uy * f; b.vx -= ux * f; b.vy -= uy * f;
+      }
+      // gravity to centre + integrate
+      for (const nd of N) {
+        nd.vx += (0 - nd.x) * 0.004 * alpha;
+        nd.vy += (0 - nd.y) * 0.004 * alpha;
+        if (dragRef.current?.id === nd.id) { nd.vx = 0; nd.vy = 0; continue; }
+        nd.vx *= 0.82; nd.vy *= 0.82;
+        nd.x += nd.vx; nd.y += nd.vy;
+      }
+      alpha = Math.max(0.02, alpha * 0.994);
+
+      // draw
+      const ctx = canvas!.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(cx, cy);
+      const hov = hoverRef.current;
+      const near = hov ? model.adj.get(hov) : null;
+
+      // edges
+      for (const e of model.edges) {
+        const a = model.idx.get(e.a)!, b = model.idx.get(e.b)!;
+        const lit = hov && (e.a === hov || e.b === hov);
+        ctx.strokeStyle = lit ? accent : "rgba(130,130,150,0.16)";
+        ctx.lineWidth = lit ? 1.6 : 0.8;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+      // nodes
+      for (const nd of N) {
+        const deg = model.degree.get(nd.id) || 0;
+        const r = nd.me ? 11 : Math.min(10, 4 + deg * 0.8);
+        const active = !hov || nd.id === hov || near?.has(nd.id);
+        ctx.globalAlpha = active ? 1 : 0.28;
+        if (nd.me) {
+          ctx.shadowColor = gold; ctx.shadowBlur = 16;
+          ctx.fillStyle = gold;
+        } else {
+          ctx.shadowColor = accent; ctx.shadowBlur = nd.id === hov ? 14 : 0;
+          ctx.fillStyle = nd.id === hov ? accent : "#c7c7d1";
+        }
+        ctx.beginPath(); ctx.arc(nd.x, nd.y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        if (nd.me || nd.id === hov || deg >= 3) {
+          ctx.globalAlpha = active ? 1 : 0.28;
+          ctx.fillStyle = nd.me ? gold : muted;
+          ctx.font = `${nd.me ? 600 : 400} 11px ui-monospace, monospace`;
+          ctx.textAlign = "center";
+          ctx.fillText(nd.me ? `${nd.name} (you)` : nd.name, nd.x, nd.y - r - 5);
+        }
+      }
+      ctx.restore();
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, [model]);
+
+  // pointer → node hit-testing in model space
+  function toModel(ev: React.PointerEvent) {
+    const c = canvasRef.current!;
+    const rect = c.getBoundingClientRect();
+    return { x: ev.clientX - rect.left - rect.width / 2, y: ev.clientY - rect.top - rect.height / 2 };
+  }
+  function pick(x: number, y: number): Node | null {
+    let best: Node | null = null, bd = 18 * 18;
+    for (const nd of model.nodes) { const dx = nd.x - x, dy = nd.y - y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = nd; } }
+    return best;
+  }
+
+  if (isLoading) return <Spinner />;
+  if (!model.nodes.length) return (
+    <div data-testid="network-graph">
+      <PageHeader title="Network graph" sub="Your founder graph, visualized." />
+      <EmptyState title="No connections yet" hint="Add friends and accept intros — your graph grows as you connect." />
+    </div>
+  );
+
+  return (
+    <div data-testid="network-graph">
+      <PageHeader title="Network graph" sub={`${model.nodes.length} people · ${model.edges.length} connections · drag to explore`} />
+      <div className="relative overflow-hidden rounded-xl border border-border bg-elev" style={{ height: "min(70vh, 560px)" }}>
+        <div className="pointer-events-none absolute inset-0 opacity-[0.06]" style={{ backgroundImage: "linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)", backgroundSize: "28px 28px" }} />
+        <canvas
+          ref={canvasRef}
+          className="h-full w-full touch-none"
+          onPointerMove={(ev) => {
+            const { x, y } = toModel(ev);
+            if (dragRef.current) { const nd = model.idx.get(dragRef.current.id); if (nd) { nd.x = x - dragRef.current.dx; nd.y = y - dragRef.current.dy; nd.vx = 0; nd.vy = 0; } return; }
+            const hit = pick(x, y); const id = hit?.id ?? null;
+            hoverRef.current = id; setHover(id);
+            canvasRef.current!.style.cursor = id ? "pointer" : "default";
+          }}
+          onPointerDown={(ev) => { const { x, y } = toModel(ev); const hit = pick(x, y); if (hit) { dragRef.current = { id: hit.id, dx: x - hit.x, dy: y - hit.y }; canvasRef.current!.setPointerCapture(ev.pointerId); } }}
+          onPointerUp={(ev) => {
+            const drag = dragRef.current; dragRef.current = null;
+            const { x, y } = toModel(ev); const hit = pick(x, y);
+            // treat as click (navigate) only if we didn't really move
+            if (hit && drag && hit.id === drag.id && Math.abs(x - drag.dx - hit.x) < 4 && !hit.me && hit.handle) nav(`/u/${hit.handle}`);
+          }}
+          onPointerLeave={() => { hoverRef.current = null; setHover(null); dragRef.current = null; }}
+        />
+        {hover && (() => { const nd = model.idx.get(hover); if (!nd) return null; return (
+          <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg border border-border bg-bg/90 px-3 py-2 text-sm backdrop-blur">
+            <div className="font-semibold">{nd.name}{nd.me ? " · you" : ""}</div>
+            <div className="font-mono text-xs text-muted">{model.degree.get(nd.id) || 0} connections{nd.handle && !nd.me ? " · click to open" : ""}</div>
+          </div>
+        ); })()}
+      </div>
+      <p className="mt-3 text-center text-xs text-muted">Node size = number of connections · gold = you · drag to rearrange, click a node to view their profile.</p>
+    </div>
+  );
+}

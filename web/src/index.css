@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── design tokens — refined-professional with a CS-nerd flavor ────────────────
+   A deliberate cool-neutral (slight blue bias, not pure grey), one confident
+   indigo accent, gold reserved for achievements. Depth via layered shadows +
+   an accent glow. Light + dark via data-theme; monospace carries the data. */
+:root,
+:root[data-theme="dark"] {
+  --bg: #0a0d12;
+  --bg-2: #0d1118;
+  --surface: #141a22;
+  --elev: #19212c;
+  --elev-2: #1f2937;
+  --border: #263041;
+  --border-strong: #33415a;
+  --text: #eef2f7;
+  --muted: #8a95a5;
+  --accent: #5b7cff;
+  --accent-2: #7d93ff;
+  --accent-ink: #0a1020;
+  --ok: #37b980;
+  --warn: #e8a33d;
+  --crit: #e5484d;
+  --gold: #f5c451;
+  --ring: color-mix(in srgb, var(--accent) 55%, transparent);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 6px 24px -8px rgb(0 0 0 / 0.55);
+  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent), 0 8px 30px -10px color-mix(in srgb, var(--accent) 45%, transparent);
+  --grid: color-mix(in srgb, var(--border) 45%, transparent);
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f4f7fb;
+  --bg-2: #eef2f8;
+  --surface: #ffffff;
+  --elev: #ffffff;
+  --elev-2: #f7f9fc;
+  --border: #e2e8f1;
+  --border-strong: #cdd7e5;
+  --text: #0d1420;
+  --muted: #586675;
+  --accent: #3358e6;
+  --accent-2: #2947cc;
+  --accent-ink: #ffffff;
+  --ok: #16a34a;
+  --warn: #b7791f;
+  --crit: #dc2626;
+  --gold: #b8860b;
+  --ring: color-mix(in srgb, var(--accent) 40%, transparent);
+  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.06);
+  --shadow-md: 0 8px 28px -10px rgb(16 24 40 / 0.16);
+  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent), 0 10px 30px -12px color-mix(in srgb, var(--accent) 35%, transparent);
+  --grid: color-mix(in srgb, var(--border) 70%, transparent);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* faint graph-paper backdrop + a soft accent aura up top — depth without clutter */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(120% 60% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 100% 100%, 32px 32px, 32px 32px;
+  background-attachment: fixed;
+  background-position: center top;
+}
+:root[data-theme="dark"] body,
+:root:not([data-theme="light"]) body { --grid-a: 0.5; }
+
+h1, h2, h3 { text-wrap: balance; }
+p { text-wrap: pretty; }
+.tnum, .font-mono { font-variant-numeric: tabular-nums; }
+
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 8px; }
+
+/* thin, nerdy scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── motion — subtle, purposeful ──────────────────────────────────────────────*/
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pop { 0% { transform: scale(0.8); opacity: 0; } 60% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes shimmer { 100% { background-position: 200% 0; } }
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+.animate-fade-up { animation: fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-pop { animation: pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* skeleton shimmer */
+.skeleton {
+  background: linear-gradient(100deg, var(--surface) 30%, var(--elev-2) 50%, var(--surface) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ── map pins ──────────────────────────────────────────────────────────────── */
+.map-pin {
+  width: 14px; height: 14px; border-radius: 999px; cursor: pointer;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 0 10px -1px color-mix(in srgb, var(--accent) 70%, transparent);
+  transition: transform 0.12s ease;
+}
+.map-pin:hover { transform: scale(1.5); z-index: 2; }
+/* bulletin-board note pin — a little gold sticky */
+.note-pin {
+  width: 16px; height: 16px; border-radius: 4px 4px 4px 0; cursor: pointer;
+  background: var(--gold); border: 2px solid var(--bg); transform: rotate(-8deg);
+  box-shadow: 0 0 10px -2px color-mix(in srgb, var(--gold) 80%, transparent);
+  transition: transform 0.12s ease;
+}
+.note-pin:hover { transform: rotate(-8deg) scale(1.4); z-index: 2; }
+/* keep the OSM base readable in dark mode without a second tile set */
+:root[data-theme="dark"] .maplibregl-canvas, :root:not([data-theme="light"]) .maplibregl-canvas { filter: brightness(0.82) saturate(0.9); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  body { background-attachment: scroll; }
+}

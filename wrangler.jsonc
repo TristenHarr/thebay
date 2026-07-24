@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "thebay-events",
+  "account_id": "571af6c05aec7513477b528a6615559b",
+  // Kept at the newest date the pinned wrangler's local runtime supports (Node 20).
+  "compatibility_date": "2026-05-03",
+  // node:crypto etc. — ulid's randomBytes needs it on the Workers runtime.
+  "compatibility_flags": ["nodejs_compat"],
+  // Live Worker (Hono) serving the API + auth + admin ingest, with the static
+  // dashboard/widget/events.json (and later the /app SPA) as fallback assets.
+  "main": "src/worker/index.ts",
+  "assets": {
+    "directory": "./dist/site",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // The Worker must run first for its own routes (API/auth) AND for /app/*
+    // (history-mode SPA) — otherwise those navigations hit the root SPA fallback
+    // and serve the dashboard instead. Static files (/, /embed, /events.json)
+    // still serve assets-first.
+    "run_worker_first": ["/api/*", "/auth/*", "/app/*"]
+  },
+  // D1 = source of truth (events + users + social). Local scraper ingests via /api/admin/ingest.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "thebay-db",
+      "database_id": "2abc4827-0d26-46d5-85d7-d8fcfc85c699",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  // Sessions (token → userId, TTL) and short-lived OAuth PKCE/state.
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "1712f93782154a81a62bc68c45b7cc3d" },
+    { "binding": "OAUTH_STATE", "id": "bf725c0973b349beb986ed5445d48240" }
+  ],
+  // Avatars + event photos.
+  "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "thebay-photos" }],
+  // One Durable Object per event group = real-time chat (WebSocket + hibernation).
+  "durable_objects": {
+    "bindings": [{ "name": "GROUP_ROOM", "class_name": "GroupRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GroupRoom"] }],
+  // Workers AI — powers the (optional) event-brief & networking-agent phrasing.
+  // The features degrade to their deterministic core when this is unavailable.
+  "ai": { "binding": "AI" },
+  // Provision the custom domain on deploy (the zone must be in your Cloudflare account).
+  "routes": [{ "pattern": "thebay.events", "custom_domain": true }]
+}

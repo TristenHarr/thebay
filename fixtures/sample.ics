@@ -1,0 +1,83 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Eventers//Sample Fixture//EN
+CALSCALE:GREGORIAN
+X-WR-CALNAME:Eventers Sample Feed
+BEGIN:VTIMEZONE
+TZID:America/Los_Angeles
+BEGIN:DAYLIGHT
+TZOFFSETFROM:-0800
+TZOFFSETTO:-0700
+TZNAME:PDT
+DTSTART:20070311T020000
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:-0700
+TZOFFSETTO:-0800
+TZNAME:PST
+DTSTART:20071104T020000
+RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:sample-hw-robotics-001@eventers
+SUMMARY:Bay Area Robotics & Embedded Systems Night
+DTSTART;TZID=America/Los_Angeles:20260812T183000
+DTEND;TZID=America/Los_Angeles:20260812T210000
+LOCATION:Noisebridge, 272 Capp St, San Francisco, CA
+DESCRIPTION:Hands-on robotics demos, FPGA soldering workshop, and embedded firmware talks. Hardware makers welcome.
+URL:https://example.org/events/robotics-night
+ORGANIZER;CN=SF Hardware Collective:mailto:host@example.org
+END:VEVENT
+BEGIN:VEVENT
+UID:sample-vc-demoday-002@eventers
+SUMMARY:Pre-Seed Founders Demo Day
+DTSTART;TZID=America/Los_Angeles:20260814T170000
+DTEND;TZID=America/Los_Angeles:20260814T200000
+LOCATION:South Park, San Francisco, CA
+DESCRIPTION:Early-stage founders pitch to seed and pre-seed angel investors. Venture capital office hours after.
+URL:https://example.org/events/demo-day
+ORGANIZER;CN=Seed Ventures:mailto:host@example.org
+END:VEVENT
+BEGIN:VEVENT
+UID:sample-math-topology-003@eventers
+SUMMARY:Applied Topology & Category Theory Seminar
+DTSTART;TZID=America/Los_Angeles:20260818T190000
+DTEND;TZID=America/Los_Angeles:20260818T203000
+LOCATION:UC Berkeley, Berkeley, CA
+DESCRIPTION:A friendly seminar on number theory, graph theory, and proofs in applied mathematics.
+URL:https://example.org/events/topology-seminar
+ORGANIZER;CN=East Bay Math Circle:mailto:host@example.org
+END:VEVENT
+BEGIN:VEVENT
+UID:sample-sw-rust-004@eventers
+SUMMARY:Rust & Distributed Systems Meetup
+DTSTART;TZID=America/Los_Angeles:20260820T183000
+DTEND;TZID=America/Los_Angeles:20260820T210000
+LOCATION:Palo Alto, CA
+DESCRIPTION:Talks on Rust, Kubernetes, distributed databases, and building reliable backend software.
+URL:https://example.org/events/rust-meetup
+ORGANIZER;CN=Peninsula Software Guild:mailto:host@example.org
+END:VEVENT
+BEGIN:VEVENT
+UID:sample-ai-llm-005@eventers
+SUMMARY:LLMs in Production: Founders & Engineers
+DTSTART;TZID=America/Los_Angeles:20260825T180000
+DTEND;TZID=America/Los_Angeles:20260825T203000
+LOCATION:San Jose, CA
+DESCRIPTION:Machine learning engineers and startup founders discuss shipping LLM software. Investors welcome.
+URL:https://example.org/events/llms-in-prod
+ORGANIZER;CN=South Bay ML:mailto:host@example.org
+END:VEVENT
+BEGIN:VEVENT
+UID:sample-hw-chips-006@eventers
+SUMMARY:Semiconductor & Photonics Startup Mixer
+DTSTART;TZID=America/Los_Angeles:20260828T173000
+DTEND;TZID=America/Los_Angeles:20260828T200000
+LOCATION:Mountain View, CA
+DESCRIPTION:Silicon, chips, photonics and deep-tech hardware startups meet early-stage venture investors.
+URL:https://example.org/events/chips-mixer
+ORGANIZER;CN=DeepTech SV:mailto:host@example.org
+END:VEVENT
+END:VCALENDAR

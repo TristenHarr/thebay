@@ -1,0 +1,10 @@
+#!/bin/sh
+# Guard-rail: never push code that doesn't typecheck + pass tests.
+# Auto-installed by `npm install` (package.json "prepare" sets core.hooksPath).
+# Bypass in a pinch with:  git push --no-verify
+echo "▶ pre-push: running verify (typecheck + tests)…"
+npm run verify || {
+  echo "✗ verify failed — push aborted. Fix it, or use 'git push --no-verify' to override."
+  exit 1
+}
+echo "✓ verify passed"
