@@ -85,7 +85,14 @@ export function graphRoutes(): App {
     await g(c).joinCommunity(c.get("user")!.id, c.req.param("id"));
     return c.json({ ok: true });
   });
-  app.get("/api/communities/:id", optionalAuth, async (c) => c.json({ members: await g(c).communityMembers(c.req.param("id")) }));
+  app.get("/api/communities/:id", optionalAuth, async (c) => {
+    const id = c.req.param("id");
+    const community = await g(c).community(id);
+    if (!community) return c.json({ error: "not found" }, 404);
+    const q = c.req.query("metric");
+    const metric = q === "intros" ? "intros" : q === "nps" ? "nps" : "points";
+    return c.json({ community, members: await g(c).communityMembers(id), metric, rankings: await g(c).communityRankings(id, metric) });
+  });
   app.get("/api/rankings", optionalAuth, async (c) => {
     const q = c.req.query("metric");
     const metric = q === "intros" ? "intros" : q === "nps" ? "nps" : "points";

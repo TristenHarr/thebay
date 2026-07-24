@@ -84,6 +84,27 @@ ok(await page.locator('[data-testid="board"]').isVisible().catch(() => false), "
   } else ok(false, "board composer not available (GPS gate)");
 }
 
+// ── community detail: create one, open it, see the members-only ranking board ─
+await page.goto(B + "/app/communities", { waitUntil: "networkidle" });
+await page.waitForSelector('[data-testid="communities"]', { timeout: 8000 }).catch(() => {});
+{
+  const nameField = page.locator('input[placeholder*="community name"]');
+  if (await nameField.count()) {
+    const cname = "Nav Circle " + Date.now();
+    await nameField.fill(cname);
+    await page.click('button:has-text("Create")');
+    await page.waitForTimeout(500);
+    await page.locator(`a:has-text("${cname}")`).first().click().catch(() => {});
+    await page.waitForSelector('[data-testid="community"]', { timeout: 8000 }).catch(() => {});
+    ok(await page.locator('[data-testid="community"]').isVisible().catch(() => false), "community detail page renders");
+    ok(await page.locator('[data-testid="community-rankings"]').isVisible().catch(() => false), "per-community ranking board renders");
+    // switching the metric tab keeps the board mounted
+    await page.click('[data-testid="community-metric-tabs"] >> text=Super-connectors').catch(() => {});
+    await page.waitForTimeout(300);
+    ok(await page.locator('[data-testid="community-rankings"]').isVisible().catch(() => false), "metric tab switch keeps the board");
+  } else ok(false, "communities composer not available");
+}
+
 // ── ⌘K command palette opens and navigates ───────────────────────────────────
 await page.goto(B + "/app/discover", { waitUntil: "networkidle" });
 await page.keyboard.press("Meta+k");

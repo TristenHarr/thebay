@@ -38,6 +38,7 @@
     "build-web": "vite build -c web/vite.config.ts",
     "test:nav": "node tests/nav-matrix.mjs",
     "test:actions": "node tests/actions-e2e.mjs",
+    "test:prod": "node tests/prod-e2e.mjs",
     "new:feature": "node scripts/new-feature.mjs",
     "cap:sync": "npm run build-web && npx cap sync",
     "cap:ios": "npx cap open ios",

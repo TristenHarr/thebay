@@ -276,6 +276,30 @@ export class GraphRepo {
       .all<Row>();
     return (res.results ?? []) as any;
   }
+  async community(communityId: string): Promise<{ id: string; name: string; kind: string | null } | null> {
+    const r = await this.db.prepare("SELECT id, name, kind FROM communities WHERE id=?").bind(communityId).first<Row>();
+    return r ? ({ id: r.id, name: r.name, kind: r.kind ?? null } as any) : null;
+  }
+  /** Same board as {@link rankings} but restricted to one community's members —
+   *  the "per-community rankings" from the spec. Metric orders identically. */
+  async communityRankings(communityId: string, metric: "intros" | "points" | "nps" = "points", limit = 50): Promise<Array<{ id: string; displayName: string; handle: string; intros: number; points: number; nps: number | null }>> {
+    const order = metric === "intros" ? "intros DESC, points DESC" : metric === "nps" ? "nps DESC, points DESC" : "points DESC, intros DESC";
+    const res = await this.db
+      .prepare(
+        `SELECT u.id, u.display_name AS displayName, u.handle,
+           (SELECT COUNT(*) FROM intro_forwards f WHERE f.connector_id=u.id AND f.status='accepted') AS intros,
+           COALESCE((SELECT SUM(points) FROM points_ledger p WHERE p.user_id=u.id), 0) AS points,
+           (SELECT CASE WHEN COUNT(*)=0 THEN NULL
+                   ELSE ROUND(100.0 * (SUM(CASE WHEN r.rating=5 THEN 1 ELSE 0 END) - SUM(CASE WHEN r.rating<=3 THEN 1 ELSE 0 END)) / COUNT(*)) END
+            FROM reviews r JOIN events e ON e.id=r.event_id WHERE e.host_user_id=u.id) AS nps
+         FROM community_members m JOIN users u ON u.id=m.user_id
+         WHERE m.community_id=? AND u.social_enabled=1
+         ORDER BY ${order} LIMIT ?`,
+      )
+      .bind(communityId, limit)
+      .all<Row>();
+    return (res.results ?? []).map((r) => ({ ...r, nps: r.nps == null ? null : Number(r.nps) })) as any;
+  }
 
   /** Attendees of an event, annotated for the AI research brief: bio, whether
    *  they're already your friend, and how many mutual friends you share. */

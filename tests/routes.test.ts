@@ -399,3 +399,27 @@ describe("cookieless calendar feed (/api/cal/:token)", () => {
     expect((await call(t, "/api/cal/not-a-real-token.ics")).status).toBe(404);
   });
 });
+
+describe("per-community rankings (/api/communities/:id)", () => {
+  it("returns the community, its members, and a members-only ranking board; 404s unknown ids", async () => {
+    const ann = await login(t, "ann@x.com", "Ann");
+    const bob = await login(t, "bob@x.com", "Bob");
+    await enableSocial(ann.cookie);
+    await enableSocial(bob.cookie);
+
+    const created = await call(t, "/api/communities", { method: "POST", cookie: ann.cookie, body: { name: "AI Infra" } });
+    expect(created.status).toBe(200);
+    const id = created.json.id;
+    await call(t, `/api/communities/${id}/join`, { method: "POST", cookie: bob.cookie });
+
+    const detail = await call(t, `/api/communities/${id}`, { cookie: ann.cookie });
+    expect(detail.status).toBe(200);
+    expect(detail.json.community.name).toBe("AI Infra");
+    expect(detail.json.members.length).toBe(2);
+    // ranking board is members-only and carries the point/intro/nps columns
+    expect(detail.json.rankings.map((r: any) => r.displayName).sort()).toEqual(["Ann", "Bob"]);
+    expect(detail.json.rankings[0]).toHaveProperty("points");
+
+    expect((await call(t, "/api/communities/does-not-exist", { cookie: ann.cookie })).status).toBe(404);
+  });
+});

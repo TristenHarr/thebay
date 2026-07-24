@@ -196,6 +196,26 @@ describe("communities + rankings", () => {
     expect(ranks[0]?.displayName).toBe("Ann"); // 1 intro made
     expect(ranks[0]?.intros).toBe(1);
   });
+
+  it("community rankings include only members, exclude outsiders, and honor the metric", async () => {
+    const a = await mkUser("a@x.com", "Ann");
+    const b = await mkUser("b@x.com", "Bob");
+    const outsider = await mkUser("o@x.com", "Outsider"); // never joins the community
+    const com = await graph.createCommunity(a.id, "AI Infra");
+    await graph.joinCommunity(b.id, com);
+
+    // Give the OUTSIDER a huge point total — they must still be absent from the
+    // community board because they aren't a member.
+    raw.prepare(`INSERT INTO points_ledger (id, user_id, kind, points, dedup_key, created_at) VALUES ('p-out', ?, 'seed', 9999, 'dk-out', '2026-01-01')`).run(outsider.id);
+    // Bob out-points Ann inside the community.
+    raw.prepare(`INSERT INTO points_ledger (id, user_id, kind, points, dedup_key, created_at) VALUES ('p-bob', ?, 'seed', 10, 'dk-bob', '2026-01-01')`).run(b.id);
+
+    const board = await graph.communityRankings(com, "points");
+    expect(board.map((r) => r.displayName).sort()).toEqual(["Ann", "Bob"]); // outsider excluded
+    expect(board.find((r) => r.displayName === "Outsider")).toBeUndefined();
+    expect(board[0]?.displayName).toBe("Bob"); // highest points among members first
+    expect(board[0]?.points).toBe(10);
+  });
 });
 
 describe("NPS in rankings", () => {

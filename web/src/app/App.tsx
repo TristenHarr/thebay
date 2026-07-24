@@ -19,6 +19,7 @@ import { Intros } from "../features/intros/Intros";
 import { Mentors } from "../features/mentors/Mentors";
 import { Match } from "../features/match/Match";
 import { Communities } from "../features/communities/Communities";
+import { Community } from "../features/communities/Community";
 import { NetworkGraph } from "../features/graph/NetworkGraph";
 import { Achievements } from "../features/achievements/Achievements";
 import { Checkin } from "../features/checkin/Checkin";
@@ -132,7 +133,7 @@ export function App() {
           <Route path="/mentors" element={<Guard me={me}><Mentors /></Guard>} />
           <Route path="/match" element={<Guard me={me}><Match /></Guard>} />
           <Route path="/communities" element={<Guard me={me}><Communities /></Guard>} />
-          <Route path="/community/:id" element={<Placeholder title="Community" phase="P3" />} />
+          <Route path="/community/:id" element={<Guard me={me}><Community /></Guard>} />
           <Route path="/network-graph" element={<Guard me={me}><NetworkGraph /></Guard>} />
           <Route path="/leaderboard" element={<Leaderboard me={me} />} />
           <Route path="/media" element={<Guard me={me}><Media /></Guard>} />
