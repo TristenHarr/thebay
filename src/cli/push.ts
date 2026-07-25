@@ -40,6 +40,34 @@ export async function pushCommand(argv: string[]): Promise<void> {
     console.log(
       `Done: ${r.inserted} inserted, ${r.updated} updated, ${r.failed} failed across ${r.batches} batch(es).`,
     );
+
+    // Report the run to the remote so /api/scrape-status reflects this push — this
+    // is how production knows it scraped, when, and how much. Non-fatal on failure.
+    try {
+      const last = (await repo.listRuns(1))[0];
+      const res = await fetch(baseUrl.replace(/\/+$/, "") + "/api/admin/scrape-report", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          startedAt: last?.startedAt,
+          finishedAt: last?.finishedAt ?? undefined,
+          trigger: "scrape+push",
+          eventsNew: r.inserted,
+          eventsUpdated: r.updated,
+          sources: (last?.sourceResults ?? []).map((s) => ({
+            sourceId: s.sourceId,
+            status: s.status,
+            rawCount: s.rawCount,
+            error: s.error ?? undefined,
+            durationMs: s.durationMs,
+          })),
+        }),
+      });
+      console.log(res.ok ? `Reported run to ${baseUrl} (see /api/scrape-status).` : `Run report rejected (HTTP ${res.status}).`);
+    } catch (e) {
+      console.warn(`Run report failed (non-fatal): ${(e as Error).message}`);
+    }
+
     if (r.failed) process.exitCode = 1;
   } finally {
     repo.close();

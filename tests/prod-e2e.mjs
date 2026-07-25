@@ -134,6 +134,12 @@ async function main() {
     } else skipped("no event to fetch by id");
 
     ok((await anon.get("/api/event/does-not-exist")).status === 404, "unknown event id → 404");
+
+    // scrape health is publicly observable: when it last ran, how much, freshness
+    const st = await anon.get("/api/scrape-status");
+    ok(st.status === 200 && typeof st.json?.totalEvents === "number", `GET /api/scrape-status → totalEvents=${st.json?.totalEvents}`);
+    ok("stale" in (st.json || {}) && "lastRunAt" in (st.json || {}), "scrape-status reports lastRunAt + stale flag");
+    if (st.json?.stale) skipped(`scrape is STALE (last run ${st.json?.lastRunAt || "never"}, ${st.json?.ageHours ?? "?"}h ago)`);
   }
 
   // ── 2. security posture ────────────────────────────────────────────────────

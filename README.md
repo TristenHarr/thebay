@@ -99,10 +99,19 @@ production D1 via `POST /api/admin/ingest` (bearer-gated). Sources are fully edi
 in `config/sources.json` / `config/cities.json`; the daily job is `scripts/daily-scrape.sh`.
 
 ```bash
-npm run scrape        # scrape all enabled sources → local SQLite
-npm run push          # push scraped events to production D1
-npm run geocode       # backfill event coordinates (Photon/OSM)
+npm run scrape          # scrape all enabled sources → local SQLite (records a run)
+npm run push            # push events to production D1 + report the run
+npm run geocode         # backfill event coordinates (Photon/OSM)
+
+npm run schedule:install  # macOS: run the daily scrape automatically (launchd, 08:00)
+npm run schedule:status   # is it scheduled? last exit code?
 ```
+
+**Observability** — every push records a run on production, so the pipeline isn't a
+black box: **`GET /api/scrape-status`** reports when it last ran, how many events it
+holds (total + upcoming), the per-source breakdown, and a **`stale`** flag if it
+hasn't run inside its daily window. `GET /api/runs` lists recent runs. `npm run test:prod`
+asserts the status endpoint, and flags staleness.
 
 ## Deploy
 

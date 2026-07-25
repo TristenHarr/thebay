@@ -113,3 +113,33 @@ describe("intros autopilot admin trigger (/api/admin/run-autopilot)", () => {
     expect((await graph.incomingForwards(viv.id)).length).toBe(1);
   });
 });
+
+describe("scrape observability endpoints", () => {
+  it("scrape-report is bearer-gated; scrape-status then shows the run + freshness", async () => {
+    const { env, raw } = makeTestEnv({ INGEST_TOKEN: "secret" });
+    // seed one upcoming event so totals are meaningful
+    raw.prepare(`INSERT INTO events (id, fingerprint, title, start_utc, timezone, city, url, content_hash, first_seen_at, last_seen_at)
+                 VALUES ('e1','fp1','A','2099-01-01T00:00:00Z','America/Los_Angeles','sf-bay','https://x','h1','2026-01-01','2026-01-01')`).run();
+
+    const url = "https://thebay.events/api/admin/scrape-report";
+    const report = JSON.stringify({ trigger: "scrape+push", eventsNew: 9, eventsUpdated: 2, sources: [{ sourceId: "luma", status: "ok", rawCount: 30 }] });
+
+    // gate: no/incorrect bearer → 401
+    expect((await app.fetch(new Request(url, { method: "POST", headers: { "content-type": "application/json" }, body: report }), env as any)).status).toBe(401);
+    // correct bearer → records the run
+    const ok = await app.fetch(new Request(url, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer secret" }, body: report }), env as any);
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as any).runId).toBeTruthy();
+
+    // public status now reflects it — no longer blind
+    const status = await app.fetch(new Request("https://thebay.events/api/scrape-status"), env as any);
+    expect(status.status).toBe(200);
+    const s = await status.json() as any;
+    expect(s.lastRunAt).toBeTruthy();
+    expect(s.stale).toBe(false);          // just reported → fresh
+    expect(s.lastRun.eventsNew).toBe(9);
+    expect(s.totalEvents).toBe(1);
+    expect(s.upcomingEvents).toBe(1);
+    expect(s.lastRun.sources[0].sourceId).toBe("luma");
+  });
+});

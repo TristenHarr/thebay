@@ -372,6 +372,75 @@ export class D1Repo implements Repository {
       .run();
   }
 
+  /**
+   * Record a completed scrape run in one shot (used by /api/admin/scrape-report,
+   * which the local `push` calls after ingesting). Gives production the run history
+   * it otherwise never sees — ingest carries only events, not run metadata.
+   */
+  async recordRun(r: {
+    startedAt?: string;
+    finishedAt?: string;
+    trigger?: string;
+    eventsNew: number;
+    eventsUpdated: number;
+    sources?: Array<{ sourceId: string; status: string; rawCount?: number; error?: string; durationMs?: number }>;
+  }): Promise<string> {
+    const id = ulid();
+    const now = new Date().toISOString();
+    const sources = r.sources ?? [];
+    const okSources = sources.filter((s) => s.status === "ok").length;
+    const failedSources = sources.filter((s) => s.status !== "ok").length;
+    await this.db
+      .prepare(
+        `INSERT INTO runs (id, started_at, finished_at, trigger, ok_sources, failed_sources, events_new, events_updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(id, r.startedAt ?? now, r.finishedAt ?? now, r.trigger ?? "scrape", okSources, failedSources, r.eventsNew, r.eventsUpdated)
+      .run();
+    if (sources.length) {
+      await this.db.batch(
+        sources.map((s) =>
+          this.db
+            .prepare(`INSERT OR REPLACE INTO run_source_results (run_id, source_id, status, raw_count, error, duration_ms) VALUES (?, ?, ?, ?, ?, ?)`)
+            .bind(id, s.sourceId, s.status, s.rawCount ?? null, s.error ?? null, s.durationMs ?? null),
+        ),
+      );
+    }
+    return id;
+  }
+
+  /**
+   * Operational health of the catalog: when it last scraped, how much it got, and
+   * whether it's gone stale (missed its daily window). `now`/`staleHours` are
+   * injectable for deterministic tests. Backs GET /api/scrape-status.
+   */
+  async scrapeStatus(opts?: { now?: Date; staleHours?: number }): Promise<{
+    lastRunAt: string | null;
+    ageHours: number | null;
+    stale: boolean;
+    totalEvents: number;
+    upcomingEvents: number;
+    lastRun: (RunSummary & { sources: SourceRunResult[] }) | null;
+  }> {
+    const now = opts?.now ?? new Date();
+    const staleHours = opts?.staleHours ?? 26;
+    const last = (await this.listRuns(1))[0] ?? null;
+    const totals = await this.db
+      .prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN start_utc >= ? THEN 1 ELSE 0 END) AS upcoming FROM events")
+      .bind(now.toISOString())
+      .first<Row>();
+    const ageMs = last ? now.getTime() - new Date(last.startedAt).getTime() : Infinity;
+    const ageHours = Number.isFinite(ageMs) ? Math.round((ageMs / 3.6e6) * 10) / 10 : null;
+    return {
+      lastRunAt: last?.startedAt ?? null,
+      ageHours,
+      stale: !last || ageMs > staleHours * 3.6e6,
+      totalEvents: Number(totals?.total ?? 0),
+      upcomingEvents: Number(totals?.upcoming ?? 0),
+      lastRun: last ? { ...last, sources: last.sourceResults ?? [] } : null,
+    };
+  }
+
   async listRuns(limit = 20): Promise<RunSummary[]> {
     const runs = await this.db
       .prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT ?")

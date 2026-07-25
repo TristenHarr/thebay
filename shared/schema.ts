@@ -52,6 +52,29 @@ export const IngestPayloadSchema = z.object({
 });
 export type IngestPayload = z.infer<typeof IngestPayloadSchema>;
 
+/** Body the local `push` POSTs to /api/admin/scrape-report after ingesting, so
+ *  production can show when it last scraped and how much it got. */
+export const ScrapeReportSchema = z.object({
+  startedAt: z.string().optional(),
+  finishedAt: z.string().optional(),
+  trigger: z.string().max(40).optional(),
+  eventsNew: z.number().int().nonnegative(),
+  eventsUpdated: z.number().int().nonnegative(),
+  sources: z
+    .array(
+      z.object({
+        sourceId: z.string().max(80),
+        status: z.string().max(40),
+        rawCount: z.number().int().nonnegative().optional(),
+        error: z.string().max(500).optional(),
+        durationMs: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .max(500)
+    .optional(),
+});
+export type ScrapeReport = z.infer<typeof ScrapeReportSchema>;
+
 /** Body the local geocoder POSTs to /api/admin/geocode (backfills event coords). */
 export const GeocodePayloadSchema = z.object({
   items: z.array(z.object({ id: z.string(), lat: z.number(), lng: z.number() })).min(1).max(2000),
