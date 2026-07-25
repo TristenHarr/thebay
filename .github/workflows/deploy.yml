@@ -33,10 +33,13 @@ jobs:
         with: { node-version: 20, cache: npm }
       - run: npm ci
 
-      - name: Build the React app (/app)
-        run: npm run build-web
+      # Order matters: build-site does rmSync(dist/site), so it MUST run before
+      # build-web — otherwise it wipes the freshly-built React app at dist/site/app
+      # and /app falls back to serving the dashboard shell.
       - name: Build the classic dashboard shell
         run: npm run build-site
+      - name: Build the React app (/app)
+        run: npm run build-web
 
       # The dashboard's event data is produced by the local scraper (residential IP
       # required), not in CI — so preserve the live events.json instead of shipping

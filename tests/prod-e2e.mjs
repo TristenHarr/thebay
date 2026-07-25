@@ -45,12 +45,29 @@ function agent(label = "anon") {
     if (body !== undefined) headers["content-type"] = "application/json";
     const c = cookie();
     if (c) headers.cookie = c;
-    const res = await fetch(BASE + path, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: "manual",
-    });
+    // Retry transient network failures (flaky links / edge blips) so a single
+    // dropped read doesn't abort the whole smoke run.
+    let res, lastErr;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000);
+      try {
+        res = await fetch(BASE + path, {
+          method,
+          headers,
+          body: body === undefined ? undefined : JSON.stringify(body),
+          redirect: "manual",
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+        break;
+      } catch (e) {
+        clearTimeout(timer);
+        lastErr = e;
+        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+    if (!res) throw new Error(`${method} ${path} failed after retries: ${lastErr?.message || lastErr}`);
     for (const sc of res.headers.getSetCookie?.() ?? []) {
       const pair = sc.split(";")[0];
       const i = pair.indexOf("=");
@@ -88,8 +105,13 @@ async function main() {
     const home = await anon.get("/");
     ok(home.status === 200 && /<!doctype html/i.test(home.text), "GET / serves the dashboard HTML");
 
+    // /app/ must serve the REACT app, not the dashboard fallback — assert the app's
+    // own JS bundle is referenced AND loads (a doctype alone is not enough: the SPA
+    // route falls back to the dashboard's index.html when the app dir is missing).
     const app = await anon.get("/app/");
-    ok(app.status === 200 && /<div id="root"|<!doctype/i.test(app.text), "GET /app/ serves the React shell");
+    const bundle = (app.text.match(/\/app\/assets\/[A-Za-z0-9._-]+\.js/) || [])[0];
+    ok(app.status === 200 && !!bundle, `GET /app/ serves the React app (bundle: ${bundle || "MISSING — dashboard fallback!"})`);
+    if (bundle) ok((await anon.get(bundle)).status === 200, "the app's JS bundle loads (200)");
 
     const feed = await anon.get("/api/events?limit=5");
     ok(feed.status === 200 && Array.isArray(feed.json?.events), "GET /api/events → events[]");
