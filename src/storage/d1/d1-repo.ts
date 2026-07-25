@@ -507,6 +507,23 @@ export class D1Repo implements Repository {
     return { scanned: rows.length, updated, merged };
   }
 
+  /**
+   * Delete events we can confidently place OUTSIDE the region (another US state or
+   * country) — Eventbrite/location-search leakage. Only touches city='unknown' rows
+   * (anything that matched a Bay alias is kept), and only those the caller's
+   * predicate flags, so online / ambiguous events are never dropped. FK CASCADE
+   * cleans up the (essentially nonexistent) dependents of scraped noise.
+   */
+  async pruneOutOfRegion(isOut: (address: string | null) => boolean): Promise<{ scanned: number; removed: number }> {
+    const rows = (await this.db.prepare("SELECT id, address FROM events WHERE city = 'unknown'").all<Row>()).results ?? [];
+    const toDelete = rows.filter((r) => isOut(r.address ?? null)).map((r) => r.id as string);
+    for (let i = 0; i < toDelete.length; i += 100) {
+      const chunk = toDelete.slice(i, i + 100);
+      await this.db.prepare(`DELETE FROM events WHERE id IN (${chunk.map(() => "?").join(",")})`).bind(...chunk).run();
+    }
+    return { scanned: rows.length, removed: toDelete.length };
+  }
+
   async listRuns(limit = 20): Promise<RunSummary[]> {
     const runs = await this.db
       .prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT ?")

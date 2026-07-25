@@ -75,3 +75,20 @@ describe("renormalizeCities — re-resolve city + fingerprint in place, dedup sa
     expect(second).toMatchObject({ updated: 0, merged: 0 });
   });
 });
+
+describe("pruneOutOfRegion — drop confidently non-Bay events, keep everything else", () => {
+  it("removes other-state/foreign unknowns; keeps CA, matched, and no-address events", async () => {
+    const { looksOutOfRegion } = await import("../src/core/normalize/region");
+    seed("bay", "SF Talk", "2026-08-01T18:00:00Z", "sf-bay", "447 Minna St, San Francisco, CA 94103", "2026-07-01");
+    seed("scz", "SCZ Talk", "2026-08-01T18:00:00Z", "sf-bay", "1415 Pacific Ave, Santa Cruz, CA 95060", "2026-07-01");
+    seed("ga", "GA Talk", "2026-08-01T18:00:00Z", "unknown", "Savannah, GA 31401", "2026-07-01");        // drop
+    seed("uk", "UK Talk", "2026-08-01T18:00:00Z", "unknown", "Shore Road, Brodick, KA27 8DL", "2026-07-01"); // drop
+    seed("online", "Online Talk", "2026-08-01T18:00:00Z", "unknown", "", "2026-07-01");                   // keep (ambiguous)
+    seed("rocklin", "Rocklin Talk", "2026-08-01T18:00:00Z", "unknown", "6648 Lonetree Blvd, Rocklin, CA 95765", "2026-07-01"); // keep (CA)
+
+    const res = await repo.pruneOutOfRegion(looksOutOfRegion);
+    expect(res.removed).toBe(2);
+    const ids = (raw.prepare("SELECT id FROM events ORDER BY id").all() as any[]).map((r) => r.id);
+    expect(ids.sort()).toEqual(["bay", "online", "rocklin", "scz"]); // ga + uk gone
+  });
+});

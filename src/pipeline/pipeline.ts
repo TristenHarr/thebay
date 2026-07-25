@@ -3,6 +3,8 @@ import { getAdapter } from "../sources/registry";
 import { createBrowserPool } from "../sources/util/browser";
 import type { AdapterContext } from "../sources/types";
 import { createNormalizer } from "../core/normalize/normalize";
+import { looksOutOfRegion } from "../core/normalize/region";
+import { UNKNOWN_CITY } from "../core/models/source";
 import { dedupeWithinRun } from "../core/dedup";
 import { RawEventSchema, type CanonicalEvent } from "../core/models/event";
 import type { CategoryDef } from "../core/models/category";
@@ -158,10 +160,17 @@ export async function runScrape(opts: ScrapeOptions = {}): Promise<ScrapeReport>
     ),
   );
 
-  const deduped = dedupeWithinRun(collected);
+  // Drop events we can confidently place outside the region (other US states /
+  // countries) — location-search leakage. Precision-first, so ambiguous/online
+  // events stay. Logged, never silent.
+  const inRegion = collected.filter((e) => !(e.city === UNKNOWN_CITY && looksOutOfRegion(e.address)));
+  const droppedOOR = collected.length - inRegion.length;
+  if (droppedOOR) logger.info({ droppedOutOfRegion: droppedOOR }, "dropped out-of-region events");
+
+  const deduped = dedupeWithinRun(inRegion);
   const { inserted, updated } = await repo.upsertEvents(deduped);
   logger.info(
-    { inserted, updated, sources: `${ok}/${selected.length}` },
+    { inserted, updated, droppedOutOfRegion: droppedOOR, sources: `${ok}/${selected.length}` },
     "scrape stored",
   );
 

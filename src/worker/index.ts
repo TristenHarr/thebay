@@ -18,6 +18,7 @@ import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-
 import { routeFactories } from "./routes";
 import citiesJson from "../../config/cities.json";
 import { makeCityResolver } from "../core/normalize/normalize";
+import { looksOutOfRegion } from "../core/normalize/region";
 import { UNKNOWN_CITY } from "../core/models/source";
 import categoriesJson from "../../config/categories.json";
 
@@ -146,6 +147,14 @@ app.post("/api/admin/renormalize", async (c) => {
   const resolve = makeCityResolver(citiesJson as any);
   const result = await new D1Repo(c.env.DB).renormalizeCities((e) => resolve(e.city, e.address, e.venueName)?.id ?? UNKNOWN_CITY);
   return c.json({ ok: true, ...result });
+});
+
+// Drop confidently out-of-region events (other US states / countries) that leaked
+// in via location search. Bearer-gated. Precision-first — see looksOutOfRegion.
+app.post("/api/admin/prune-out-of-region", async (c) => {
+  const token = c.env.INGEST_TOKEN;
+  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+  return c.json({ ok: true, ...(await new D1Repo(c.env.DB).pruneOutOfRegion(looksOutOfRegion)) });
 });
 
 // Run warm-intros autopilot on demand (same work the cron does). Bearer-gated so

@@ -160,3 +160,23 @@ describe("scrape renormalize admin trigger (/api/admin/renormalize)", () => {
     expect((raw.prepare("SELECT city FROM events WHERE id='e1'").get() as any).city).toBe("sf-bay");
   });
 });
+
+describe("prune out-of-region admin trigger (/api/admin/prune-out-of-region)", () => {
+  it("is bearer-gated and removes only confidently non-Bay events", async () => {
+    const { env, raw } = makeTestEnv({ INGEST_TOKEN: "secret" });
+    const ev = (id: string, city: string, address: string) =>
+      raw.prepare(`INSERT INTO events (id, fingerprint, title, start_utc, timezone, city, address, url, content_hash, first_seen_at, last_seen_at)
+                   VALUES (?, ?, 'T', '2026-08-01T18:00:00Z','America/Los_Angeles', ?, ?, 'https://x/'||?, 'c'||?, '2026-07-01','2026-07-01')`).run(id, "fp-" + id, city, address, id, id);
+    ev("keep", "sf-bay", "447 Minna St, San Francisco, CA 94103");
+    ev("ga", "unknown", "Savannah, GA 31401");
+    ev("online", "unknown", "");
+
+    const url = "https://thebay.events/api/admin/prune-out-of-region";
+    expect((await app.fetch(new Request(url, { method: "POST" }), env as any)).status).toBe(401);
+    const ok = await app.fetch(new Request(url, { method: "POST", headers: { authorization: "Bearer secret" } }), env as any);
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as any).removed).toBe(1); // only ga
+    const ids = (raw.prepare("SELECT id FROM events ORDER BY id").all() as any[]).map((r) => r.id);
+    expect(ids.sort()).toEqual(["keep", "online"]);
+  });
+});
