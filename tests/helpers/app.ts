@@ -39,17 +39,28 @@ export interface TestApp {
  *  drive the REAL Worker app (middleware, onError, admin routes), not just routes. */
 export function makeTestEnv(overrides: Record<string, any> = {}) {
   const { d1, raw } = makeTestDb();
+  // The ASSETS stub RECORDS what was asked for. A stub that returns a constant
+  // can't tell "served the events shell" from "served the news shell" — exactly
+  // the bug class that host/SPA routing produces, and it fails silently with a
+  // 200. Assert on assetLog instead of on the body.
+  const assetLog: string[] = [];
   const env = {
     DB: d1,
     SESSIONS: memoryKV(),
     OAUTH_STATE: memoryKV(),
     PHOTOS: memoryR2(),
     GROUP_ROOM: {} as any,
-    ASSETS: { fetch: async () => new Response("<!doctype html>asset", { status: 200, headers: { "content-type": "text/html" } }) },
+    ASSETS: {
+      fetch: async (r: Request) => {
+        const p = new URL(typeof r === "string" ? r : r.url).pathname;
+        assetLog.push(p);
+        return new Response(`<!doctype html>asset:${p}`, { status: 200, headers: { "content-type": "text/html" } });
+      },
+    },
     DEV_LOGIN: "1",
     ...overrides,
   };
-  return { env, d1, raw };
+  return { env, d1, raw, assetLog };
 }
 
 export function makeTestApp(overrides: Record<string, any> = {}): TestApp {

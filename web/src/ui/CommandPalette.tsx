@@ -57,6 +57,12 @@ export function CommandPalette() {
     { id: "me", label: "My profile", group: "Go", run: go("/me") },
     { id: "host", label: "Host an event", group: "Action", run: go("/host") },
     { id: "newgoal", label: "Add a goal", group: "Action", run: go("/goals") },
+    // Cross-domain: a full navigation through OUR handoff endpoint (relative), so
+    // the reader lands on thebay.news already signed in.
+    { id: "news", label: "thebay.news — Bay Area tech news", hint: "↗", group: "Go",
+      run: () => { window.location.href = "/auth/handoff/start?next=%2F"; } },
+    { id: "news-submit", label: "Submit a story to thebay.news", hint: "↗", group: "Action",
+      run: () => { window.location.href = "/auth/handoff/start?next=%2Fsubmit"; } },
   ], []); // go() closes over nav; stable enough for this session
 
   const eventCmds: Cmd[] = useMemo(() => {

@@ -9,6 +9,13 @@ export interface Env {
   OAUTH_STATE: KVNamespace;
   PHOTOS: R2Bucket;
   GROUP_ROOM: DurableObjectNamespace;
+  /** thebay.news only: one realtime room per story (presence + comment fan-out).
+   *  Typed with global fetch signatures for the same reason ASSETS is — the
+   *  workers-types Request/Response clash with the globals otherwise. */
+  NEWS_ROOM?: {
+    idFromName(name: string): unknown;
+    get(id: unknown): { fetch(request: Request): Promise<Response> };
+  };
   // Static assets. Global fetch signature to avoid the workers-types Fetcher clash.
   ASSETS: { fetch(request: Request): Promise<Response> };
 
@@ -20,7 +27,10 @@ export interface Env {
   RESEND_API_KEY?: string; // magic-link email (optional; Cloudflare Email is an alt)
   EMAIL_FROM?: string;
   DEV_LOGIN?: string; // "1" enables the passwordless dev login (local/testing only)
-  PUBLIC_ORIGIN?: string; // e.g. https://thebay.events (defaults to the request origin)
+  PUBLIC_ORIGIN?: string; // e.g. https://thebay.events (canonical for long-lived URLs)
+  // thebay.news — the sibling Worker shares this Env shape and these bindings.
+  NEWS_ORIGIN?: string; // e.g. https://thebay.news (canonical for rel=canonical/OG/sitemap)
+  EVENTS_ORIGIN?: string; // where the news site links back to for events
   // Cloudflare Access (Zero Trust) login
   ACCESS_TEAM_DOMAIN?: string; // e.g. thebay.cloudflareaccess.com
   ACCESS_AUD?: string; // the Access application's AUD tag

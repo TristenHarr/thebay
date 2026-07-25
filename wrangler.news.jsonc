@@ -1,0 +1,59 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "thebay-news",
+  "account_id": "571af6c05aec7513477b528a6615559b",
+  "compatibility_date": "2026-05-03",
+  "compatibility_flags": ["nodejs_compat"],
+  // A SEPARATE Worker from thebay-events, on purpose. `run_worker_first` has no
+  // host dimension, and `not_found_handling` resolves to the asset root's
+  // index.html — so a single Worker serving both domains would either push every
+  // thebay.events request through the Worker or silently serve the events
+  // dashboard on news URLs. Splitting them keeps the events Worker's asset
+  // routing byte-identical and makes rollback "stop deploying this one".
+  "main": "src/worker/news.ts",
+  "assets": {
+    "directory": "./dist/news",
+    "binding": "ASSETS",
+    // The Worker renders every page and its own 404, so there is no SPA fallback
+    // to get wrong. A missing route fails loudly instead of serving another site.
+    "not_found_handling": "none",
+    // Everything reaches the Worker except the hashed, immutable asset bundle,
+    // which the asset layer serves directly (free, edge-cached, no invocation).
+    "run_worker_first": ["/*", "!/assets/*", "!/icon.svg"]
+  },
+  // The SAME database as thebay.events: shared accounts, shared social graph, and
+  // events that news stories can point at. That sharing is the entire product.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "thebay-db",
+      "database_id": "2abc4827-0d26-46d5-85d7-d8fcfc85c699",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  // Same session store, so an account is one account across both domains. Also
+  // backs the 12h Bay-presence attestations and the rate-limit counters.
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "1712f93782154a81a62bc68c45b7cc3d" },
+    { "binding": "OAUTH_STATE", "id": "bf725c0973b349beb986ed5445d48240" }
+  ],
+  "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "thebay-photos" }],
+  // One room per story: "N reading now" presence + live comment fan-out. Idle
+  // rooms hibernate, which matters because most stories are idle most of the time.
+  "durable_objects": {
+    "bindings": [{ "name": "NEWS_ROOM", "class_name": "NewsRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["NewsRoom"] }],
+  // Optional: powers the AI TL;DR. Degrades to no summary when unavailable.
+  "ai": { "binding": "AI" },
+  "vars": {
+    "NEWS_ORIGIN": "https://thebay.news",
+    "PUBLIC_ORIGIN": "https://thebay.events"
+  },
+  // Attach the domain in the dashboard FIRST and verify the cert, then deploy —
+  // wrangler reconciles routes after uploading the script, so a provisioning
+  // hiccup would fail the deploy with the new script already live.
+  "routes": [{ "pattern": "thebay.news", "custom_domain": true }],
+  // Pull HN / Lobsters / RSS and refresh the ranked front page.
+  "triggers": { "crons": ["*/15 * * * *"] }
+}

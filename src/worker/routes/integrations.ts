@@ -3,6 +3,7 @@ import type { Env, Vars } from "../env";
 import { IntegrationsRepo, type Provider } from "../../storage/d1/integrations-repo";
 import { requireAuth } from "../../auth/middleware";
 import { generateIcs, parseIcs, type IcsEvent } from "../../integrations/ics";
+import { canonicalOrigin } from "../origin";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type App = Hono<{ Bindings: Env; Variables: Partial<Vars> }>;
@@ -95,8 +96,9 @@ export function integrationRoutes(): App {
   app.post("/api/me/calendar/subscribe", requireAuth, async (c) => {
     const token = newToken();
     await c.env.SESSIONS.put(`cal:${token}`, c.get("user")!.id, { expirationTtl: 400 * 24 * 3600 });
-    const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin;
-    return c.json({ url: `${origin}/api/cal/${token}.ics` });
+    // Canonical, never the request origin: this URL lives in the user's calendar
+    // app for 400 days and must keep resolving regardless of which host minted it.
+    return c.json({ url: `${canonicalOrigin(c.env)}/api/cal/${token}.ics` });
   });
   app.get("/api/cal/:token", async (c) => {
     const token = c.req.param("token").replace(/\.ics$/, "");

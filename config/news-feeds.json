@@ -1,0 +1,37 @@
+[
+  {
+    "id": "arxiv-math",
+    "url": "https://rss.arxiv.org/rss/math.CO",
+    "topics": ["math"],
+    "enabled": true,
+    "note": "arXiv combinatorics — the math axis."
+  },
+  {
+    "id": "arxiv-eess-sp",
+    "url": "https://rss.arxiv.org/rss/eess.SP",
+    "topics": ["hardware"],
+    "enabled": true,
+    "note": "Signal processing — hardware-adjacent research."
+  },
+  {
+    "id": "cloudflare-blog",
+    "url": "https://blog.cloudflare.com/rss/",
+    "topics": ["software"],
+    "enabled": true,
+    "note": "Deep systems writing; also the platform this runs on."
+  },
+  {
+    "id": "hackaday",
+    "url": "https://hackaday.com/feed/",
+    "topics": ["hardware"],
+    "enabled": true,
+    "note": "Hardware builds and teardowns."
+  },
+  {
+    "id": "sfstandard-tech",
+    "url": "https://sfstandard.com/feed/",
+    "topics": [],
+    "enabled": true,
+    "note": "Local SF reporting — the Bay half of Bay Area tech."
+  }
+]

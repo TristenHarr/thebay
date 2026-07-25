@@ -87,6 +87,8 @@ export type Brand<T, B extends string> = T & { readonly __brand: B };
 export type UserId = Brand<string, "UserId">;
 export type EventId = Brand<string, "EventId">;
 export type GroupId = Brand<string, "GroupId">;
+export type StoryId = Brand<string, "StoryId">;
+export type CommentId = Brand<string, "CommentId">;
 
 export const UserSchema = z.object({
   id: z.string(),
@@ -148,8 +150,66 @@ export const HostEventSchema = z.object({
 export type HostEvent = z.infer<typeof HostEventSchema>;
 
 /** Points economy — server is the sole authority; each kind has a fixed value. */
-export const POINTS = { rsvp: 5, checkin: 20, photo: 15, review: 10, host: 50, intro: 25, mentor: 15 } as const;
+export const POINTS = {
+  rsvp: 5, checkin: 20, photo: 15, review: 10, host: 50, intro: 25, mentor: 15,
+  // thebay.news. Submitting is worth more than commenting, and voting is worth
+  // nothing — paying for votes buys you vote-farming, not signal.
+  submit: 10, comment: 3,
+} as const;
 export type PointKind = keyof typeof POINTS;
+
+// ── thebay.news ───────────────────────────────────────────────────────────────
+
+/** Where a story came from. `bay` = submitted by a human here. */
+export const StoryOriginSchema = z.enum(["bay", "hn", "lobsters", "rss", "event"]);
+export type StoryOrigin = z.infer<typeof StoryOriginSchema>;
+
+export const StoryKindSchema = z.enum(["link", "text", "ask", "show"]);
+export type StoryKind = z.infer<typeof StoryKindSchema>;
+
+/** A submission. A link post needs a url; ask/show/text need a body. */
+export const StorySubmitSchema = z
+  .object({
+    kind: StoryKindSchema.default("link"),
+    title: z.string().min(3).max(200),
+    url: z.string().url().max(2000).optional(),
+    body: z.string().max(8000).optional(),
+    eventId: z.string().max(64).optional(),
+  })
+  .refine((s) => (s.kind === "link" ? !!s.url : !!s.body || !!s.url), {
+    message: "a link post needs a url; a text/ask/show post needs a body",
+    path: ["url"],
+  });
+export type StorySubmit = z.infer<typeof StorySubmitSchema>;
+
+export const CommentCreateSchema = z.object({
+  body: z.string().min(1).max(8000),
+  parentId: z.string().max(64).optional(),
+});
+export type CommentCreate = z.infer<typeof CommentCreateSchema>;
+
+/** Feed query. `src` defaults to `bay` — OUR content is the front page; the
+ *  aggregator view is a deliberate choice the reader makes, not the default. */
+export const NewsFeedSourceSchema = z.enum(["bay", "all", "hn", "lobsters", "rss", "event"]);
+export type NewsFeedSource = z.infer<typeof NewsFeedSourceSchema>;
+export const NewsSortSchema = z.enum(["hot", "new", "top", "discussed"]);
+export type NewsSort = z.infer<typeof NewsSortSchema>;
+export const NewsFilterSchema = z.object({
+  src: NewsFeedSourceSchema.default("bay"),
+  sort: NewsSortSchema.default("hot"),
+  topic: z.string().max(40).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  offset: z.coerce.number().int().min(0).max(10_000).default(0),
+});
+export type NewsFilter = z.infer<typeof NewsFilterSchema>;
+
+/** Proof-of-presence for a write. Posting, commenting and voting on thebay.news
+ *  all require the actor to be physically in the Bay (src/core/geo.inBay). */
+export const GeoAttestSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+export type GeoAttest = z.infer<typeof GeoAttestSchema>;
 
 /* ─────────────────────────── founder graph ───────────────────────────────── */
 

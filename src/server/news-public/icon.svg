@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="thebay.news">
+  <!-- Sibling to the events icon: same rounded square, same dark ground, same gold
+       accent dot. Where events shows a signal being broadcast, news shows the
+       water it travels over — a horizon at first light. -->
+  <rect width="512" height="512" rx="112" fill="#071211"/>
+  <defs>
+    <linearGradient id="tide" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2dd4bf" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- horizon -->
+  <rect x="96" y="206" width="320" height="3" rx="1.5" fill="url(#tide)"/>
+  <!-- first light -->
+  <circle cx="256" cy="206" r="34" fill="#f5c451"/>
+  <!-- tide lines, receding -->
+  <path d="M112 268c28-20 56-20 84 0s56 20 84 0 56-20 84 0 28 20 36 0"
+        fill="none" stroke="#2dd4bf" stroke-width="16" stroke-linecap="round" opacity="0.95"/>
+  <path d="M132 330c26-18 52-18 78 0s52 18 78 0 52-18 78 0"
+        fill="none" stroke="#2dd4bf" stroke-width="14" stroke-linecap="round" opacity="0.6"/>
+  <path d="M156 386c22-15 44-15 66 0s44 15 66 0 44-15 66 0"
+        fill="none" stroke="#2dd4bf" stroke-width="12" stroke-linecap="round" opacity="0.3"/>
+</svg>

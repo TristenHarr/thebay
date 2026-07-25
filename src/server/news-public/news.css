@@ -1,0 +1,405 @@
+/*
+ * thebay.news — "looking out over the water at first light."
+ *
+ * Sibling to thebay.events: same token names, same scale, same lockup. The only
+ * deliberate departures are the ones that make it a READING surface rather than an
+ * application — turquoise instead of indigo, a serif for titles, and a list
+ * instead of cards.
+ *
+ * Restraint is the design. One flourish (the tideline under the header), one
+ * gradient (fog above, water below), hairlines everywhere else.
+ */
+
+/* ── tokens ─────────────────────────────────────────────────────────────────── */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg:           #071211;  /* night water */
+  --bg-2:         #0a1817;
+  --surface:      #0b1a19;
+  --elev:         #0f2221;
+  --line:         #16302e;
+  --line-strong:  #1f403d;
+  --text:         #e6f2f0;
+  --muted:        #7d9694;
+  --faint:        #4d6462;
+  --accent:       #2dd4bf;
+  --accent-2:     #5eead4;
+  --accent-soft:  #134e4a;
+  --accent-ink:   #04201c;
+  --visited:      #6b8a88;
+  --gold:         #f5c451;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.28);
+  --shadow-md: 0 8px 28px -12px rgb(0 0 0 / 0.55);
+  --ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* Horizon: fog at the top of the page, deeper water toward the bottom. */
+  --horizon: linear-gradient(180deg, #0a1a19 0%, #071211 38%, #050f0e 100%);
+  --tide: linear-gradient(90deg, transparent, var(--accent) 22%, var(--accent-2) 50%, var(--accent) 78%, transparent);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:           #f6faf9;  /* fog */
+  --bg-2:         #eef5f4;
+  --surface:      #ffffff;
+  --elev:         #ffffff;
+  --line:         #dfeae8;
+  --line-strong:  #c6d8d5;
+  --text:         #08201e;
+  --muted:        #55716e;
+  --faint:        #8aa5a2;
+  --accent:       #0d9488;
+  --accent-2:     #0f766e;
+  --accent-soft:  #ccfbf1;
+  --accent-ink:   #ffffff;
+  --visited:      #8aa5a2;
+  --gold:         #b8860b;
+
+  --shadow-sm: 0 1px 2px rgb(8 32 30 / 0.06);
+  --shadow-md: 0 8px 28px -14px rgb(8 32 30 / 0.18);
+
+  --horizon: linear-gradient(180deg, #ffffff 0%, #f6faf9 42%, #eaf3f1 100%);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: #f6faf9; --bg-2: #eef5f4; --surface: #ffffff; --elev: #ffffff;
+    --line: #dfeae8; --line-strong: #c6d8d5; --text: #08201e; --muted: #55716e;
+    --faint: #8aa5a2; --accent: #0d9488; --accent-2: #0f766e; --accent-soft: #ccfbf1;
+    --accent-ink: #ffffff; --visited: #8aa5a2; --gold: #b8860b;
+    --horizon: linear-gradient(180deg, #ffffff 0%, #f6faf9 42%, #eaf3f1 100%);
+  }
+}
+
+/* ── base ───────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  background-image: var(--horizon);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The two families that carry the brand: warm editorial titles, cold technical
+   metadata. That contrast is the whole identity. */
+.serif { font-family: ui-serif, "Iowan Old Style", Charter, "Source Serif 4", "Palatino Linotype", Georgia, serif; }
+.mono  { font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace; }
+
+a { color: inherit; text-decoration: none; }
+a:hover { color: var(--accent); }
+:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 4px; }
+
+.wrap { max-width: 46rem; margin: 0 auto; padding: 0 24px; }
+
+/* ── header ─────────────────────────────────────────────────────────────────── */
+.masthead {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+/* The one flourish: a tide line at the waterline of the header. */
+.masthead::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: var(--tide); opacity: 0.55;
+}
+
+.masthead-inner {
+  height: 46px; display: flex; align-items: center; gap: 16px;
+}
+
+.brand {
+  font-size: 13px; font-weight: 700; letter-spacing: -0.01em;
+  white-space: nowrap; color: var(--text);
+}
+.brand .tilde { color: var(--accent); margin-right: 2px; }
+.brand:hover { color: var(--text); }
+
+.masthead nav { display: flex; align-items: center; gap: 14px; margin-left: auto; }
+
+.navlink {
+  font-size: 11.5px; letter-spacing: 0.02em; color: var(--muted);
+  white-space: nowrap;
+}
+.navlink:hover, .navlink[aria-current="page"] { color: var(--accent); }
+
+/* Cross-site switcher — one tap between the two halves of The Bay. */
+.switch {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.switch:hover { color: var(--accent); border-color: var(--accent-soft); }
+
+.iconbtn {
+  background: none; border: 1px solid transparent; color: var(--muted);
+  font-size: 12px; cursor: pointer; padding: 3px 6px; border-radius: 999px;
+  line-height: 1; font-family: inherit;
+}
+.iconbtn:hover { color: var(--accent); border-color: var(--line); }
+
+/* ── filter bar ─────────────────────────────────────────────────────────────── */
+.filters {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 14px 0 12px;
+}
+.filters .sep { width: 1px; height: 14px; background: var(--line); margin: 0 6px; }
+
+.chip {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  font-size: 11px; letter-spacing: 0.02em;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 3px 10px; cursor: pointer; white-space: nowrap;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.chip:hover { color: var(--text); border-color: var(--line-strong); }
+.chip[aria-pressed="true"] {
+  color: var(--accent-ink); background: var(--accent); border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── story list ─────────────────────────────────────────────────────────────── */
+.stories { list-style: none; margin: 0; padding: 0; }
+
+.story {
+  display: grid;
+  grid-template-columns: 2.5ch 18px 1fr;
+  column-gap: 10px;
+  align-items: baseline;
+  padding: 14px 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+}
+.stories > .story:first-child { border-top: none; }
+
+.rank {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  font-size: 12px; color: var(--faint); text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vote {
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: var(--faint); font-size: 13px; line-height: 1;
+  transition: color 120ms ease, transform 120ms ease;
+  align-self: start; margin-top: 3px;
+}
+.vote:hover { color: var(--accent); }
+.vote[aria-pressed="true"] { color: var(--accent); }
+.vote:active { transform: scale(1.35); }
+
+.story-main { min-width: 0; }
+
+.story-title {
+  font-family: ui-serif, "Iowan Old Style", Charter, "Source Serif 4", "Palatino Linotype", Georgia, serif;
+  font-size: 17px; line-height: 1.35; letter-spacing: -0.01em;
+  font-weight: 600; margin: 0;
+}
+.story-title a:visited { color: var(--visited); }
+.story-title a:hover { color: var(--accent); }
+
+.story-meta {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  font-size: 11.5px; letter-spacing: 0.02em; color: var(--muted);
+  margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+.story-meta a:hover { color: var(--accent); }
+.story-meta .dot { color: var(--faint); }
+.domain { color: var(--faint); }
+
+/* TL;DR — present but never competing with the title. */
+.tldr {
+  font-size: 13px; line-height: 1.55; color: var(--muted);
+  margin-top: 6px; max-width: 62ch;
+}
+
+/* Source marks. OURS is turquoise; aggregated sources are neutral, so local
+   content leads the eye even in a mixed feed. */
+.mark {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 3px; border: 1px solid var(--line);
+  color: var(--faint); white-space: nowrap;
+}
+.mark-bay, .mark-event {
+  color: var(--accent); border-color: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+/* Preview thumbnail — small enough to keep the list dense, present enough to
+   make the page feel alive. */
+.thumb {
+  grid-column: 3; justify-self: end;
+  width: 72px; height: 54px; border-radius: 6px; object-fit: cover;
+  border: 1px solid var(--line); background: var(--bg-2);
+  margin-left: 14px; float: right; shape-outside: margin-box;
+}
+
+/* ── item page ──────────────────────────────────────────────────────────────── */
+.item-head { padding: 22px 0 4px; }
+.item-title {
+  font-family: ui-serif, "Iowan Old Style", Charter, "Source Serif 4", "Palatino Linotype", Georgia, serif;
+  font-size: 27px; line-height: 1.22; letter-spacing: -0.015em; font-weight: 600;
+  margin: 0 0 8px;
+}
+.item-body { max-width: 66ch; margin: 16px 0; }
+.item-body p { margin: 0 0 1em; }
+
+/* The link preview card: the article's own image and description, harvested at
+   ingest so rendering never waits on a third-party origin. */
+.preview {
+  display: flex; gap: 14px; align-items: stretch;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  background: var(--surface); margin: 16px 0; box-shadow: var(--shadow-sm);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.preview:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); }
+.preview img { width: 168px; object-fit: cover; flex: none; background: var(--bg-2); }
+.preview-text { padding: 12px 14px; min-width: 0; }
+.preview-site {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent);
+}
+.preview-title { font-weight: 600; margin: 3px 0 4px; line-height: 1.35; }
+.preview-desc {
+  font-size: 13px; color: var(--muted); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* ── comments ───────────────────────────────────────────────────────────────── */
+.comments { margin: 26px 0 60px; }
+.comments-head {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+}
+
+.comment { padding: 12px 0 2px; }
+/* Hairline depth guides instead of avatars or boxes: the thread stays text-first. */
+.comment-nest {
+  margin-left: 6px; padding-left: 14px;
+  border-left: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  transition: border-color 140ms ease;
+}
+.comment-nest:hover { border-left-color: var(--accent-soft); }
+
+.comment-meta {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px;
+}
+.comment-body { margin-top: 4px; max-width: 66ch; }
+.comment-body p { margin: 0 0 0.75em; }
+.comment[data-collapsed="true"] .comment-body,
+.comment[data-collapsed="true"] .comment-nest { display: none; }
+
+.toggle {
+  background: none; border: none; color: var(--faint); cursor: pointer;
+  font-family: inherit; font-size: 11px; padding: 0 2px; line-height: 1;
+}
+.toggle:hover { color: var(--accent); }
+
+/* "was there" — the badge only this site can issue. */
+.was-there {
+  color: var(--accent); font-size: 10px; letter-spacing: 0.04em;
+  border: 1px solid var(--accent-soft); border-radius: 3px; padding: 0 4px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+/* ── forms ──────────────────────────────────────────────────────────────────── */
+.field { display: block; margin: 0 0 14px; }
+.field > span {
+  display: block; font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 5px;
+}
+.input, textarea.input {
+  width: 100%; background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 11px; font: inherit; font-size: 14px;
+}
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea.input { min-height: 120px; resize: vertical; line-height: 1.6; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent); color: var(--accent-ink);
+  border: 1px solid var(--accent); border-radius: 999px;
+  padding: 8px 18px; font: inherit; font-size: 13.5px; font-weight: 600;
+  cursor: pointer; transition: filter 120ms ease;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn-quiet {
+  background: transparent; color: var(--muted); border-color: var(--line);
+}
+.btn-quiet:hover { color: var(--accent); border-color: var(--accent-soft); filter: none; }
+
+/* ── notices ────────────────────────────────────────────────────────────────── */
+.notice {
+  border: 1px solid var(--line); border-left: 2px solid var(--accent);
+  background: var(--surface); border-radius: 0 8px 8px 0;
+  padding: 11px 14px; margin: 14px 0; font-size: 13.5px; color: var(--muted);
+}
+.notice strong { color: var(--text); font-weight: 600; }
+.notice-warn { border-left-color: var(--gold); }
+
+.empty {
+  text-align: center; color: var(--muted); padding: 56px 20px;
+  border: 1px dashed var(--line); border-radius: 12px; margin: 20px 0;
+}
+.empty h2 {
+  font-family: ui-serif, "Iowan Old Style", Charter, Georgia, serif;
+  font-size: 19px; font-weight: 600; margin: 0 0 6px; color: var(--text);
+}
+
+/* ── footer ─────────────────────────────────────────────────────────────────── */
+.foot {
+  /* Horizontal padding must match .wrap's or the footer sits left of the content
+     above it — the shorthand here would otherwise reset .wrap's 24px. */
+  border-top: 1px solid var(--line); margin-top: 40px; padding: 20px 24px 48px;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: var(--faint);
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+}
+.foot a:hover { color: var(--accent); }
+
+/* ── pagination ─────────────────────────────────────────────────────────────── */
+.pager { padding: 22px 0 8px; display: flex; gap: 12px; }
+
+/* ── small screens ──────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .wrap { padding: 0 16px; }
+  .story { grid-template-columns: 2ch 18px 1fr; column-gap: 8px; }
+  .story-title { font-size: 16px; }
+  .item-title { font-size: 22px; }
+  .thumb { width: 56px; height: 44px; margin-left: 10px; }
+  .preview img { width: 110px; }
+  .masthead nav { gap: 10px; }
+}
+
+/* ── motion & print ─────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  .vote:active { transform: none; }
+}
+
+@media print {
+  .masthead, .filters, .vote, .foot, .pager { display: none; }
+  body { background: #fff; color: #000; }
+}

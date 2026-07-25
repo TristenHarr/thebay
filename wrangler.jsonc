@@ -19,6 +19,10 @@
     // still serve assets-first.
     "run_worker_first": ["/api/*", "/auth/*", "/app/*"]
   },
+  // Canonical origin for URLs that outlive the request that minted them (calendar
+  // subscribe feeds, emailed magic links, cross-domain redirects). Without this,
+  // those URLs inherit whichever hostname the request happened to arrive on.
+  "vars": { "PUBLIC_ORIGIN": "https://thebay.events" },
   // D1 = source of truth (events + users + social). Local scraper ingests via /api/admin/ingest.
   "d1_databases": [
     {

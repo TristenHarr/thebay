@@ -34,14 +34,23 @@ export async function requestMagicLink(env: Env, email: string, origin: string):
   return { devLink: link }; // no email provider configured → surface for dev/testing
 }
 
-/** Consume a magic-link token; returns the email if valid & unused, else null. */
+/** Consume a magic-link token; returns the email if valid & unused, else null.
+ *
+ *  The UPDATE *is* the guard: `AND used = 0 AND expires_at > ?` makes claiming the
+ *  token atomic, so two concurrent clicks on the same link can't both succeed.
+ *  (Reading the row first and then updating it is a TOCTOU — both readers see
+ *  used=0 and both mint a session.) `expires_at` is an ISO-8601 UTC string, so
+ *  lexicographic comparison is chronological. */
 export async function verifyMagicLink(env: Env, t: string): Promise<string | null> {
   const hash = await sha256hex(t);
+  const claimed = await env.DB
+    .prepare("UPDATE magic_links SET used = 1 WHERE token_hash = ? AND used = 0 AND expires_at > ?")
+    .bind(hash, new Date().toISOString())
+    .run();
+  if (!claimed.meta?.changes) return null; // unknown, already used, or expired
   const row = await env.DB
-    .prepare("SELECT email, expires_at, used FROM magic_links WHERE token_hash = ?")
+    .prepare("SELECT email FROM magic_links WHERE token_hash = ?")
     .bind(hash)
-    .first<{ email: string; expires_at: string; used: number }>();
-  if (!row || row.used || new Date(row.expires_at).getTime() < Date.now()) return null;
-  await env.DB.prepare("UPDATE magic_links SET used = 1 WHERE token_hash = ?").bind(hash).run();
-  return row.email;
+    .first<{ email: string }>();
+  return row?.email ?? null;
 }

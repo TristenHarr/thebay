@@ -22,6 +22,26 @@
 
 The classic static dashboard + free public API + `/embed` widget still serve unchanged; the React app lives at `/app`.
 
+## Two sites, one repo
+
+This is a **monorepo**: two Cloudflare Workers, two domains, one `npm ci`, one test suite, one `migrations/` directory, one shared `src/`.
+
+| | **thebay.events** | **thebay.news** |
+|---|---|---|
+| Config | `wrangler.jsonc` | `wrangler.news.jsonc` |
+| Entry | `src/worker/index.ts` | `src/worker/news.ts` |
+| Assets | `dist/site` | `dist/news` |
+| Client | React SPA at `/app` (`web/`) | **server-rendered HTML** + a ~3KB island |
+| Build | `build-site` → `build-web` | `build-news` (copy + content-hash) |
+
+They share the **same D1, KV and R2 bindings** — one account, one social graph, one set of events — plus everything in `src/` (repos, auth, session, `core/`). That sharing is the product: a news story can point at a real event, and a commenter can be shown to have attended it.
+
+**Why two Workers rather than one serving both hosts:** `run_worker_first` has no host dimension, and `not_found_handling` resolves to the asset root's `index.html`. One Worker would therefore either force every thebay.events request through the Worker, or silently serve the events dashboard on news URLs (`thebay.events/item/123` returns 200 + the dashboard today — verified). Splitting keeps the events Worker's asset routing byte-identical, gives each host its own `robots.txt`/`sitemap.xml` for free, and makes rollback "stop deploying `thebay-news`".
+
+**Why the news site is server-rendered:** social crawlers (Slack, X, LinkedIn, Discord, iMessage) never execute JavaScript, and a news site's growth loop is people pasting links. Every page ships complete HTML — title, story text, comments, OpenGraph, JSON-LD — before any script runs. `src/news/render/*` holds pure template functions; **all user text goes through `src/news/render/escape.ts`**, which is a security boundary, not a formatting helper.
+
+Ranking, URL canonicalization, dedup, filtering and rate-limit policy are pure functions in `src/news/`, unit-tested with a pinned clock — never buried in a handler.
+
 ## The golden path of a request
 
 Data flows through the same layers every time. Adding a feature means touching each once, in order:

@@ -16,6 +16,7 @@ import { IngestPayloadSchema, GeocodePayloadSchema, ScrapeReportSchema } from ".
 import type { Env, Vars } from "./env";
 import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-types";
 import { routeFactories } from "./routes";
+import { harden } from "./security";
 import citiesJson from "../../config/cities.json";
 import { makeCityResolver } from "../core/normalize/normalize";
 import { looksOutOfRegion } from "../core/normalize/region";
@@ -49,25 +50,9 @@ function parseFilter(q: Record<string, string>): EventFilter {
 
 const app = new Hono<{ Bindings: Env; Variables: Partial<Vars> }>();
 
-// Security headers applied to EVERY response — including redirects and errors.
-const SECURITY_HEADERS: Record<string, string> = {
-  "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
-  "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "strict-origin-when-cross-origin",
-  "X-Frame-Options": "SAMEORIGIN",
-};
-/** Stamp the hardening headers onto a response (asset responses can have
- *  immutable headers, so fall back to rebuilding it). */
-export function harden(res: Response): Response {
-  try {
-    for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.headers.set(k, v);
-    return res;
-  } catch {
-    const r = new Response(res.body, res);
-    for (const [k, v] of Object.entries(SECURITY_HEADERS)) r.headers.set(k, v);
-    return r;
-  }
-}
+// Security headers live in ./security so thebay.news applies the identical set.
+export { SECURITY_HEADERS } from "./security";
+export { harden };
 
 // Force HTTPS (Safari flags a reachable http:// origin as "not secure").
 app.use("*", async (c, next) => {

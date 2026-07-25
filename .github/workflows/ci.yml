@@ -27,7 +27,15 @@ jobs:
         run: npm run typecheck:web
       - name: Unit + integration tests
         run: npm test
-      - name: Build the web app
-        run: npm run build-web
+      # Order matters and is load-bearing: build-site does rmSync(dist/site), so it
+      # MUST run before build-web (which writes dist/site/app) or the SPA is wiped.
+      # CI builds in the SAME order as deploy.yml so the real artifact layout is
+      # validated on every PR, not discovered in production.
       - name: Build the static site (verifies it compiles with an empty DB)
         run: npm run build-site
+      - name: Build the web app
+        run: npm run build-web
+      - name: Build thebay.news assets
+        run: npm run build-news
+      - name: Verify the built artifact layout
+        run: test -f dist/site/index.html && test -f dist/site/app/index.html && test -f dist/news/asset-manifest.json

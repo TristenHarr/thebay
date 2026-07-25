@@ -40,6 +40,12 @@ jobs:
         run: npm run build-site
       - name: Build the React app (/app)
         run: npm run build-web
+      # thebay.news assets. Separate tree (dist/news), so order-independent — but
+      # kept here so one deploy always ships both halves of The Bay together.
+      - name: Build thebay.news assets
+        run: npm run build-news
+      - name: Verify the artifact layout
+        run: test -f dist/site/index.html && test -f dist/site/app/index.html && test -f dist/news/asset-manifest.json
 
       # The dashboard's event data is produced by the local scraper (residential IP
       # required), not in CI — so preserve the live events.json instead of shipping
@@ -47,11 +53,20 @@ jobs:
       - name: Preserve live event data
         run: curl -sf https://thebay.events/events.json -o dist/site/events.json || echo "no live events.json yet"
 
-      - name: Deploy worker + assets
+      - name: Deploy thebay.events worker + assets
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Separate Worker, separate deploy: a news failure must not be able to take
+      # the events site with it. Deployed second for the same reason.
+      - name: Deploy thebay.news worker + assets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy -c wrangler.news.jsonc
 
       # Prove the just-shipped deployment actually serves: health, the REAL /app
       # bundle (guards the build-order regression), security headers, pagination,
@@ -68,4 +83,19 @@ jobs:
           done
           PROD_LIGHT=1 node tests/prod-e2e.mjs
         env:
+          BASE: https://thebay.events
+
+      # thebay.news: proves the page is complete WITHOUT JavaScript (the whole
+      # reason it's server-rendered), that the hashed bundle it references really
+      # exists, and that the news domain never serves the events site.
+      - name: Smoke-test thebay.news
+        run: |
+          echo "waiting for thebay.news to propagate…"
+          for i in $(seq 1 20); do
+            if curl -sf https://thebay.news/robots.txt | grep -q "thebay.news/sitemap.xml"; then echo "live after ~$((i*3))s"; break; fi
+            sleep 3
+          done
+          node tests/news-prod-e2e.mjs
+        env:
+          NEWS_BASE: https://thebay.news
           BASE: https://thebay.events

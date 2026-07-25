@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { SocialRepo } from "../../storage/d1/social-repo";
-import { startSession, endSession } from "../../auth/session";
+import { startSession, endSession, currentUserId } from "../../auth/session";
+import { mintHandoff, claimHandoff, safeNextPath, isTopLevelNavigation } from "../../auth/handoff";
+import { canonicalOrigin, newsOrigin } from "../origin";
 import { authorizeUrl, completeOAuth, pkceChallenge, providerConfigured, randomString, type Provider } from "../../auth/oauth";
 import { requestMagicLink, verifyMagicLink } from "../../auth/magic";
 import { fetchAccessIdentity } from "../../auth/access";
@@ -11,8 +13,55 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const originOf = (c: { env: Env; req: { url: string } }) => c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin;
 
+/** The sibling site's origin, from wherever this request arrived. */
+function siblingOrigin(c: { env: Env; req: { url: string } }): string {
+  const host = new URL(c.req.url).host.toLowerCase();
+  const news = newsOrigin(c.env);
+  return host === new URL(news).host.toLowerCase() ? canonicalOrigin(c.env) : news;
+}
+
 export function authRoutes(): Hono<{ Bindings: Env }> {
   const a = new Hono<{ Bindings: Env }>();
+
+  // ── cross-domain handoff ────────────────────────────────────────────────
+  // thebay.events and thebay.news can't share a cookie (different registrable
+  // domains), so a signed-in reader is handed across with a single-use token.
+  // Mounted on BOTH Workers: /start mints for the sibling, /handoff claims here.
+  // Call this on the origin you are LEAVING — it mints for the sibling and sends
+  // you there. Linking to the *other* site's /start bounces you straight back.
+  a.get("/auth/handoff/start", async (c) => {
+    const target = siblingOrigin(c);
+    const next = safeNextPath(c.req.query("next"));
+    // localStorage can't span two registrable domains, so the reader's theme
+    // rides along in the URL and the landing page's bootstrap script adopts it.
+    const theme = c.req.query("theme");
+    const themeQ = theme === "dark" || theme === "light" ? `theme=${theme}` : "";
+    const withTheme = (url: string) =>
+      themeQ ? url + (url.includes("?") ? "&" : "?") + themeQ : url;
+
+    const uid = await currentUserId(c);
+    // Not signed in: send them over anyway, logged out. Never emit an empty token.
+    if (!uid) return c.redirect(withTheme(target + next), 302);
+    const token = await mintHandoff(c.env, uid, new URL(target).host, next);
+    return c.redirect(withTheme(`${target}/auth/handoff?t=${encodeURIComponent(token)}`), 302);
+  });
+
+  a.get("/auth/handoff", async (c) => {
+    // Must be a real navigation — otherwise an <img> or fetch() could be used to
+    // silently sign a victim in as the attacker.
+    if (!isTopLevelNavigation(c.req.raw.headers)) return c.text("bad request", 400);
+    const claim = await claimHandoff(c.env, c.req.query("t") || "", new URL(c.req.url).host);
+    // Unknown, expired, used, or wrong host all look the same from outside.
+    const theme = c.req.query("theme");
+    const suffix = theme === "dark" || theme === "light" ? `?theme=${theme}` : "";
+    if (!claim) return c.redirect("/" + suffix, 302);
+    await endSession(c); // never merge into an existing session
+    await startSession(c, claim.userId);
+    // Token never persists in the URL bar; the theme does, just long enough for
+    // the landing page's bootstrap to store it.
+    const dest = claim.nextPath + (suffix && !claim.nextPath.includes("?") ? suffix : "");
+    return c.redirect(dest, 302);
+  });
 
   // ── OAuth (Google, GitHub) ──────────────────────────────────────────────
   a.get("/auth/:provider/start", async (c) => {

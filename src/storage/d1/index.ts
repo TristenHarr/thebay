@@ -11,3 +11,4 @@ export { GraphRepo } from "./graph-repo";
 export { IntegrationsRepo, type Provider } from "./integrations-repo";
 export { MediaRepo } from "./media-repo";
 export { NotesRepo, type Note } from "./notes-repo";
+export { NewsRepo, slugify, type Story, type Comment as StoryComment, type StorySourceRef } from "./news-repo";

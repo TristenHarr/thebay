@@ -7,6 +7,9 @@ import { getTheme, toggleTheme } from "../theme";
 import { Placeholder } from "../ui/Placeholder";
 import { CommandPalette } from "../ui/CommandPalette";
 import { SignIn } from "../features/auth/SignIn";
+
+/** The sibling site. Sign-in is shared, so links go via the handoff endpoint. */
+export const NEWS_ORIGIN = "https://thebay.news";
 import { Discover } from "../features/discover/Discover";
 import { EventPage, ReviewPage } from "../features/events/EventPage";
 import { Goals } from "../features/goals/Goals";
@@ -93,6 +96,17 @@ export function App() {
           ))}
         </nav>
         <div className="flex-1" />
+        {/* Cross-site switcher — the mirror of the one on thebay.news.
+            The handoff starts on the origin you're LEAVING (relative path here),
+            which mints for the sibling and redirects there. Pointing this at
+            thebay.news/auth/handoff/start would bounce you straight back. */}
+        <a
+          href={`/auth/handoff/start?next=%2F&theme=${getTheme()}`}
+          className="hidden items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-accent sm:flex"
+          title="thebay.news — Bay Area tech news"
+        >
+          <span className="font-mono">≈ news</span>
+        </a>
         <button
           onClick={() => window.dispatchEvent(new Event("open-command-palette"))}
           className="hidden items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-text sm:flex"

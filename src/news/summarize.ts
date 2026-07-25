@@ -1,0 +1,68 @@
+/**
+ * The AI TL;DR and topic tagging.
+ *
+ * Follows the pattern the rest of this codebase already uses for AI: a
+ * DETERMINISTIC core that always works, with the model as an optional
+ * improvement on top. If there's no AI binding, no key, or the model returns
+ * something unusable, the story still gets a sensible summary and correct topics
+ * — it just gets them from rules instead. Nothing here is allowed to fail a
+ * cron run or block a page render.
+ */
+import type { Env } from "../worker/env";
+import type { Story } from "../storage/d1/news-repo";
+
+export interface Summary { summary: string; topics: string[] }
+
+/** The four axes this site ranks against, with the words that signal each. */
+const TOPIC_SIGNALS: Record<string, RegExp> = {
+  hardware: /\b(hardware|chip|silicon|semiconductor|fab|mems|photonic|robot(ic)?s?|sensor|fpga|asic|pcb|embedded|wafer|lidar|batter(y|ies)|manufactur|quantum|drone|satellite|biotech)/i,
+  vc: /\b(seed|series [a-d]\b|venture|vc\b|funding|fundrais|raise[sd]?|valuation|term sheet|cap table|investor|angel|yc\b|accelerator|incubator|acquisition|ipo|startup|founder|entrepreneur|pitch|demo day)/i,
+  math: /\b(theorem|proof|conjecture|topolog|algebra|combinator|geometr|number theory|probabilit|lemma|manifold|arxiv|mathemat|cryptograph)/i,
+  software: /\b(software|compiler|database|kernel|runtime|api\b|framework|typescript|rust\b|python|golang|distributed|latency|open.?source|protocol|llm|machine learning|\bai\b|developer|engineer|hackathon|devops|infrastructure|security)/i,
+};
+
+/** Rule-based topics — always available, and the fallback when the model isn't. */
+export function deriveTopics(text: string): string[] {
+  const hay = String(text ?? "");
+  return Object.entries(TOPIC_SIGNALS).filter(([, re]) => re.test(hay)).map(([k]) => k);
+}
+
+/** A usable summary with no model at all: the source's own description, trimmed. */
+export function fallbackSummary(story: Pick<Story, "description" | "body" | "title">): string | null {
+  const raw = (story.description || story.body || "").replace(/\s+/g, " ").trim();
+  if (raw.length < 40) return null; // too short to be worth a TL;DR line
+  return raw.length <= 180 ? raw : raw.slice(0, 179).replace(/\s+\S*$/, "") + "…";
+}
+
+const PROMPT = (title: string, context: string) =>
+  `Summarize this tech news item for a Bay Area engineering audience in ONE sentence of at most 30 words. ` +
+  `Be concrete and factual. Do not editorialize, do not start with "This article".\n\n` +
+  `Title: ${title}\n${context ? `Context: ${context.slice(0, 1200)}\n` : ""}\nOne-sentence summary:`;
+
+/**
+ * Best-effort summary. Returns null when there's nothing worth storing, so the
+ * caller simply leaves `summary` NULL and the row renders without a TL;DR.
+ */
+export async function summarizeStory(env: Env, story: Story): Promise<Summary | null> {
+  const context = (story.description || story.body || "").trim();
+  const topics = deriveTopics(`${story.title} ${context}`);
+  const fallback = fallbackSummary(story);
+
+  if (!env.AI) return fallback ? { summary: fallback, topics } : topics.length ? { summary: "", topics } : null;
+
+  try {
+    const res: any = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      messages: [{ role: "user", content: PROMPT(story.title, context) }],
+      max_tokens: 90,
+    });
+    const text = String(res?.response ?? res?.result?.response ?? "").replace(/\s+/g, " ").trim();
+    // Guard against the model returning an empty string, a refusal, or an essay.
+    if (text.length >= 25 && text.length <= 400) {
+      return { summary: text.length <= 220 ? text : text.slice(0, 219).replace(/\s+\S*$/, "") + "…", topics };
+    }
+  } catch {
+    // Model unavailable or errored — fall through to the deterministic path.
+  }
+
+  return fallback ? { summary: fallback, topics } : topics.length ? { summary: "", topics } : null;
+}
