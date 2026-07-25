@@ -58,7 +58,14 @@ jobs:
       # and the no-auth gates. PROD_LIGHT creates zero data, so it's safe every run.
       - name: Smoke-test the live deployment
         run: |
-          sleep 5
+          # A brand-new route can lag a few seconds propagating to every edge after
+          # wrangler returns. Poll a stable JSON endpoint until the new version is
+          # live (≤60s) so the smoke doesn't race the rollout and hit the old worker.
+          echo "waiting for the new version to propagate…"
+          for i in $(seq 1 20); do
+            if curl -sf https://thebay.events/api/scrape-status | grep -q '"totalEvents"'; then echo "live after ~$((i*3))s"; break; fi
+            sleep 3
+          done
           PROD_LIGHT=1 node tests/prod-e2e.mjs
         env:
           BASE: https://thebay.events
