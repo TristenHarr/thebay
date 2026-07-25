@@ -277,25 +277,33 @@ export class NewsRepo {
   async networkVoteCounts(storyIds: string[], viewerId: string): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     if (!storyIds.length) return out;
-    const ph = storyIds.map(() => "?").join(",");
-    // friendships stores one row per pair with user_low < user_high, so "the other
-    // person" is whichever column isn't the viewer.
-    const r = await this.db
-      .prepare(
-        `SELECT v.story_id, COUNT(*) AS n
-           FROM story_votes v
-          WHERE v.story_id IN (${ph})
-            AND v.user_id <> ?
-            AND v.user_id IN (
-              SELECT CASE WHEN user_low = ? THEN user_high ELSE user_low END
-                FROM friendships
-               WHERE status = 'accepted' AND (user_low = ? OR user_high = ?)
-            )
-          GROUP BY v.story_id`,
-      )
-      .bind(...storyIds, viewerId, viewerId, viewerId, viewerId)
-      .all<Row>();
-    for (const x of r.results ?? []) out.set(x.story_id, x.n);
+
+    // CHUNKED, like attachSources and markVoted. This one runs over the hot
+    // ranker's FULL candidate window and only for signed-in readers — so an
+    // unchunked IN (?,?,…) blows D1's bound-parameter cap and 500s the front
+    // page for logged-in users while anonymous requests look perfectly healthy.
+    for (let i = 0; i < storyIds.length; i += 90) {
+      const chunk = storyIds.slice(i, i + 90);
+      const ph = chunk.map(() => "?").join(",");
+      // friendships stores one row per pair with user_low < user_high, so "the
+      // other person" is whichever column isn't the viewer.
+      const r = await this.db
+        .prepare(
+          `SELECT v.story_id, COUNT(*) AS n
+             FROM story_votes v
+            WHERE v.story_id IN (${ph})
+              AND v.user_id <> ?
+              AND v.user_id IN (
+                SELECT CASE WHEN user_low = ? THEN user_high ELSE user_low END
+                  FROM friendships
+                 WHERE status = 'accepted' AND (user_low = ? OR user_high = ?)
+              )
+            GROUP BY v.story_id`,
+        )
+        .bind(...chunk, viewerId, viewerId, viewerId, viewerId)
+        .all<Row>();
+      for (const x of r.results ?? []) out.set(x.story_id, x.n);
+    }
     return out;
   }
 

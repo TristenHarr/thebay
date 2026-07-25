@@ -118,7 +118,61 @@ async function get(path, init = {}) {
   check("admin ingest requires bearer", admin.status === 401, `got ${admin.status}`);
   check("websocket route rejects non-upgrade", (await get("/ws/item/x")).status === 426);
 
-  section("8 · The two sites are distinct (the silent-wrong-site check)");
+  section("8 · Signed-in rendering (anonymous checks alone are not enough)");
+  // The signed-in path runs extra per-viewer queries that anonymous requests
+  // never touch. An unchunked one of those 500'd the live front page for logged-in
+  // readers while every anonymous check above stayed green — so exercise it.
+  try {
+    const email = `smoke-${Date.now()}@example.invalid`;
+    const reg = await get(`${EVENTS}/auth/password/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password: "Sm0ke-Test-Passw0rd!", name: "Smoke" }),
+    });
+    const evCookie = (reg.headers.getSetCookie?.() ?? [])[0]?.split(";")[0];
+    check("can register on thebay.events", reg.status === 200 && !!evCookie, `got ${reg.status}`);
+
+    const start = await get(`${EVENTS}/auth/handoff/start?next=%2F`, { headers: { cookie: evCookie || "" } });
+    const landing = start.headers.get("location");
+    check("handoff points at thebay.news", !!landing && landing.startsWith(NEWS), landing || "no redirect");
+
+    // Claiming the token requires a real top-level navigation, and node's fetch
+    // always sends sec-fetch-mode: cors (it's a forbidden header, so an explicit
+    // value is ignored) — so the guard rightly refuses it. Sign in directly on
+    // the news host instead; the accounts are shared and signed-in RENDERING is
+    // what this section exists to cover. The handoff itself is covered by unit
+    // tests and by a real browser navigation.
+    const login = await get(`${NEWS}/auth/password/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password: "Sm0ke-Test-Passw0rd!" }),
+    });
+    const newsCookie = (login.headers.getSetCookie?.() ?? [])[0]?.split(";")[0];
+    check("same account signs in on thebay.news", login.status === 200 && !!newsCookie, `got ${login.status}`);
+
+    if (newsCookie) {
+      for (const path of ["/", "/?src=all", "/newest", "/?src=all&sort=new"]) {
+        const r = await get(path, { headers: { cookie: newsCookie } });
+        check(`signed-in ${path} renders`, r.status === 200, `got ${r.status}`);
+      }
+      const submit = await get("/submit", { headers: { cookie: newsCookie } });
+      check("signed-in /submit renders", submit.status === 200, `got ${submit.status}`);
+    }
+  } catch (err) {
+    bad("signed-in checks ran", String(err));
+  }
+
+  section("9 · www hosts resolve (a custom domain covers the exact host only)");
+  for (const host of ["https://www.thebay.news", "https://www.thebay.events"]) {
+    try {
+      const r = await get(host + "/");
+      check(`${host} responds`, r.status === 200 || r.status === 301, `got ${r.status}`);
+    } catch (err) {
+      bad(`${host} responds`, "did not resolve");
+    }
+  }
+
+  section("10 · The two sites are distinct (the silent-wrong-site check)");
   check("news does NOT serve the events dashboard", !front.body.includes("events.json") && !/id="app"/.test(front.body));
   check("news brand present", front.body.includes("the.bay"));
   check("news links back to events", front.body.includes(EVENTS));
