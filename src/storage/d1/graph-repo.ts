@@ -149,6 +149,30 @@ export class GraphRepo {
     return r?.n ?? 0;
   }
 
+  /**
+   * Warm intros on autopilot. For every connector who has the networking agent
+   * enabled AND set to 'auto' mode, auto-forward each open intro request they're a
+   * genuine mutual for (reusing {@link connectorInbox} eligibility) that they
+   * haven't already forwarded. Idempotent via UNIQUE(request_id, connector_id).
+   * Runs on the scheduled (cron) handler and can be triggered from the admin route.
+   */
+  async runIntroAutopilot(): Promise<{ forwarded: number; details: Array<{ connectorId: string; requestId: string; forwardId: string }> }> {
+    const connectors = await this.db
+      .prepare(`SELECT user_id FROM agent_settings WHERE networking_enabled = 1 AND json_extract(guardrails_json, '$.mode') = 'auto'`)
+      .all<{ user_id: string }>();
+    const details: Array<{ connectorId: string; requestId: string; forwardId: string }> = [];
+    for (const { user_id: connectorId } of connectors.results ?? []) {
+      const inbox = await this.connectorInbox(connectorId);
+      for (const { request } of inbox) {
+        const already = await this.db.prepare("SELECT 1 FROM intro_forwards WHERE request_id=? AND connector_id=?").bind(request.id, connectorId).first();
+        if (already) continue; // never re-forward or double-count
+        const forwardId = await this.forwardIntro(connectorId, request.id);
+        if (forwardId) details.push({ connectorId, requestId: request.id, forwardId });
+      }
+    }
+    return { forwarded: details.length, details };
+  }
+
   // ── mentors ─────────────────────────────────────────────────────────────────
   async setMentorProfile(userId: string, p: { topics: string[]; availability?: string; blurb?: string; active?: boolean }): Promise<void> {
     await this.db

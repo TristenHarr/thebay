@@ -58,7 +58,7 @@ export function Agent() {
                 {m === "approve" ? "Approve each" : "Autopilot"}
               </button>
             ))}
-            <Badge>{mode === "approve" ? "you confirm every intro" : "acts within guardrails"}</Badge>
+            <Badge>{mode === "approve" ? "you confirm every intro" : "auto-forwards warm intros you can make"}</Badge>
           </div>
         )}
       </Card>

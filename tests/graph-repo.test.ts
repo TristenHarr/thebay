@@ -218,6 +218,63 @@ describe("communities + rankings", () => {
   });
 });
 
+describe("intros autopilot", () => {
+  // stamp agent_settings directly (owned by PlatformRepo; the graph repo only reads it)
+  const setAgent = (userId: string, enabled: boolean, mode: string) =>
+    raw
+      .prepare(
+        `INSERT INTO agent_settings (user_id, networking_enabled, guardrails_json, updated_at) VALUES (?, ?, ?, '2026-01-01')
+         ON CONFLICT(user_id) DO UPDATE SET networking_enabled=excluded.networking_enabled, guardrails_json=excluded.guardrails_json`,
+      )
+      .run(userId, enabled ? 1 : 0, JSON.stringify({ mode }));
+
+  it("auto-forwards eligible requests only for connectors that are enabled AND in auto mode; idempotent", async () => {
+    const ann = await mkUser("ann@x.com", "Ann"); // requester
+    const cid = await mkUser("cid@x.com", "Cid"); // connector: enabled + auto  → forwards
+    const dan = await mkUser("dan@x.com", "Dan"); // connector: enabled + approve → does NOT
+    const eve = await mkUser("eve@x.com", "Eve"); // connector: disabled + auto → does NOT
+    const viv = await mkUser("viv@x.com", "Viv"); // target
+    // every connector is a genuine mutual (friends with BOTH requester and target)
+    for (const con of [cid, dan, eve]) { await befriend(ann.id, con.id); await befriend(con.id, viv.id); }
+    const req = await graph.createIntroRequest(ann.id, { targetDesc: "Viv", targetUserId: viv.id });
+
+    setAgent(cid.id, true, "auto");
+    setAgent(dan.id, true, "approve");
+    setAgent(eve.id, false, "auto");
+
+    const run1 = await graph.runIntroAutopilot();
+    expect(run1.forwarded).toBe(1); // only Cid
+
+    const fwds = raw.prepare("SELECT connector_id, request_id, status FROM intro_forwards").all() as any[];
+    expect(fwds.length).toBe(1);
+    expect(fwds[0].connector_id).toBe(cid.id);
+    expect(fwds[0].status).toBe("forwarded");
+
+    // the target now has exactly one pending forward, from Cid
+    const incoming = await graph.incomingForwards(viv.id);
+    expect(incoming.length).toBe(1);
+
+    // running again forwards nothing new (idempotent on the UNIQUE(request,connector) key)
+    expect((await graph.runIntroAutopilot()).forwarded).toBe(0);
+
+    // and the warm intro still completes: Viv accepts → connected + Cid credited
+    expect(await graph.acceptIntro(viv.id, incoming[0]!.forwardId)).toBe("connected");
+    expect(await graph.introsMade(cid.id)).toBe(1);
+    expect((await graph.myIntroRequests(ann.id))[0]?.status).toBe("matched");
+    expect(req).toBeTruthy();
+  });
+
+  it("an auto connector who isn't a mutual of both parties forwards nothing", async () => {
+    const ann = await mkUser("ann@x.com", "Ann");
+    const cid = await mkUser("cid@x.com", "Cid"); // knows Ann but NOT the target → ineligible
+    const viv = await mkUser("viv@x.com", "Viv");
+    await befriend(ann.id, cid.id); // Cid ↔ Ann only
+    await graph.createIntroRequest(ann.id, { targetDesc: "Viv", targetUserId: viv.id });
+    setAgent(cid.id, true, "auto");
+    expect((await graph.runIntroAutopilot()).forwarded).toBe(0);
+  });
+});
+
 describe("NPS in rankings", () => {
   it("computes host NPS from event review ratings (promoters − detractors)", async () => {
     const host = await mkUser("host@x.com", "Host");

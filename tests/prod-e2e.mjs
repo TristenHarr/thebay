@@ -158,6 +158,7 @@ async function main() {
     ok((await agent().post("/api/host", { title: "x", startUtc: "2099-01-01T00:00:00Z" })).status === 401, "POST /api/host without auth → 401");
     ok((await agent().post("/api/goals", { kind: "overall", title: "x" })).status === 401, "POST /api/goals without auth → 401");
     ok((await anon.post("/api/admin/ingest", { events: [] })).status === 401, "ingest without bearer → 401");
+    ok((await anon.post("/api/admin/run-autopilot")).status === 401, "run-autopilot without bearer → 401");
   }
 
   // In light mode we stop here — everything above is read-only / negative, so a CI

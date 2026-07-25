@@ -11,8 +11,10 @@ import { cors } from "hono/cors";
 import type { CanonicalEvent } from "../core/models/event";
 import type { EventFilter } from "../storage/repository";
 import { D1Repo } from "../storage/d1/d1-repo";
+import { GraphRepo } from "../storage/d1/graph-repo";
 import { IngestPayloadSchema, GeocodePayloadSchema } from "../../shared/schema";
 import type { Env, Vars } from "./env";
+import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-types";
 import { routeFactories } from "./routes";
 import citiesJson from "../../config/cities.json";
 import categoriesJson from "../../config/categories.json";
@@ -121,6 +123,14 @@ app.post("/api/admin/ingest", async (c) => {
   return c.json({ ok: true, ...result });
 });
 
+// Run warm-intros autopilot on demand (same work the cron does). Bearer-gated so
+// only the operator can trigger it; the scheduled handler runs it automatically.
+app.post("/api/admin/run-autopilot", async (c) => {
+  const token = c.env.INGEST_TOKEN;
+  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+  return c.json({ ok: true, ...(await new GraphRepo(c.env.DB).runIntroAutopilot()) });
+});
+
 // Backfill event coordinates (from the local geocoder). Bearer-gated.
 app.post("/api/admin/geocode", async (c) => {
   const token = c.env.INGEST_TOKEN;
@@ -151,4 +161,11 @@ app.get("/app/*", (c) => {
 // ── static assets (dashboard, embed, events.json, /app/ shell + bundles) ───────
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 
-export default app;
+// The Worker's fetch handler is the Hono app; the scheduled (cron) handler drives
+// warm-intros autopilot so opted-in connectors' intros go out without a manual tap.
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(new GraphRepo(env.DB).runIntroAutopilot());
+  },
+};

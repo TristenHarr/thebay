@@ -83,3 +83,33 @@ describe("admin ingest bearer gate", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("intros autopilot admin trigger (/api/admin/run-autopilot)", () => {
+  it("is bearer-gated and auto-forwards eligible requests for auto-mode connectors", async () => {
+    const { env, d1, raw } = makeTestEnv({ INGEST_TOKEN: "secret" });
+    const { SocialRepo } = await import("../src/storage/d1/social-repo");
+    const { GraphRepo } = await import("../src/storage/d1/graph-repo");
+    const social = new SocialRepo(d1 as any);
+    const graph = new GraphRepo(d1 as any);
+    const mk = async (email: string, name: string) => {
+      const u = await social.upsertByIdentity({ provider: "dev", providerUid: email, email, displayName: name });
+      await social.updateProfile(u.id, { socialEnabled: true });
+      return u;
+    };
+    const bf = async (a: string, b: string) => { await social.requestFriend(a, b); await social.respondFriend(b, a, true); };
+    const ann = await mk("ann@x.com", "Ann"), cid = await mk("cid@x.com", "Cid"), viv = await mk("viv@x.com", "Viv");
+    await bf(ann.id, cid.id); await bf(cid.id, viv.id);
+    await graph.createIntroRequest(ann.id, { targetDesc: "Viv", targetUserId: viv.id });
+    raw.prepare(`INSERT INTO agent_settings (user_id, networking_enabled, guardrails_json, updated_at) VALUES (?,1,'{"mode":"auto"}','2026-01-01')`).run(cid.id);
+
+    const url = "https://thebay.events/api/admin/run-autopilot";
+    expect((await app.fetch(new Request(url, { method: "POST" }), env as any)).status).toBe(401);
+    expect((await app.fetch(new Request(url, { method: "POST", headers: { authorization: "Bearer wrong" } }), env as any)).status).toBe(401);
+
+    const ok = await app.fetch(new Request(url, { method: "POST", headers: { authorization: "Bearer secret" } }), env as any);
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as any).forwarded).toBe(1);
+    // the warm intro is now pending for the target to accept
+    expect((await graph.incomingForwards(viv.id)).length).toBe(1);
+  });
+});
