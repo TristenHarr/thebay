@@ -14,11 +14,22 @@
       "San Jose", "Campbell", "Los Gatos", "Saratoga", "Cupertino", "Morgan Hill",
       "Redwood City", "San Carlos", "Belmont", "San Mateo", "Foster City",
       "Burlingame", "Millbrae", "San Bruno", "South San Francisco", "Daly City",
-      "Brisbane", "Pacifica", "Half Moon Bay", "Colma",
+      "Brisbane", "Pacifica", "Half Moon Bay", "Colma", "Montara", "Moss Beach", "El Granada",
+      "Portola Valley", "Woodside", "Hillsborough",
       "Richmond", "El Cerrito", "San Ramon", "Dublin", "Pleasanton", "Livermore",
-      "Walnut Creek", "Concord", "Danville",
+      "Walnut Creek", "Concord", "Danville", "Gilroy", "San Martin",
+      "Martinez", "Antioch", "Pittsburg", "Brentwood", "Oakley", "Clayton",
+      "Hercules", "Pinole", "San Pablo", "Moraga", "Pleasant Hill", "Lafayette", "Orinda", "Castro Valley",
+      "Santa Cruz", "Santa Cruz County", "Capitola", "Scotts Valley", "Watsonville",
+      "Aptos", "Soquel", "Felton", "Ben Lomond", "Boulder Creek",
+      "San Rafael", "Novato", "Sausalito", "Mill Valley", "Corte Madera", "Larkspur",
+      "San Anselmo", "Tiburon", "Fairfax", "Marin", "Marin City",
+      "Petaluma", "Santa Rosa", "Sonoma", "Rohnert Park", "Sebastopol", "Healdsburg", "Cotati",
+      "Napa", "American Canyon", "Yountville", "Saint Helena", "Calistoga",
+      "Vallejo", "Benicia", "Fairfield", "Suisun City", "Vacaville",
       "South Bay", "Peninsula", "East Bay", "North Bay", "Bay Area",
-      "Silicon Valley", "SF Bay", "San Francisco Bay Area"
+      "Silicon Valley", "SF Bay", "San Francisco Bay Area", "Wine Country",
+      "Marin County", "Sonoma County", "Napa Valley"
     ]
   }
 ]

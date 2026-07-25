@@ -143,3 +143,20 @@ describe("scrape observability endpoints", () => {
     expect(s.lastRun.sources[0].sourceId).toBe("luma");
   });
 });
+
+describe("scrape renormalize admin trigger (/api/admin/renormalize)", () => {
+  it("is bearer-gated and re-resolves stored events' city against cities.json", async () => {
+    const { env, raw } = makeTestEnv({ INGEST_TOKEN: "secret" });
+    // an "unknown" Santa Cruz event, as it would have been stored before the aliases
+    raw.prepare(`INSERT INTO events (id, fingerprint, title, start_utc, timezone, city, address, url, content_hash, first_seen_at, last_seen_at)
+                 VALUES ('e1','oldfp','AI Meetup','2026-08-01T18:00:00Z','America/Los_Angeles','unknown','1415 Pacific Ave, Santa Cruz, CA 95060','https://x','ch1','2026-07-01','2026-07-01')`).run();
+
+    const url = "https://thebay.events/api/admin/renormalize";
+    expect((await app.fetch(new Request(url, { method: "POST" }), env as any)).status).toBe(401);
+
+    const ok = await app.fetch(new Request(url, { method: "POST", headers: { authorization: "Bearer secret" } }), env as any);
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as any).updated).toBe(1);
+    expect((raw.prepare("SELECT city FROM events WHERE id='e1'").get() as any).city).toBe("sf-bay");
+  });
+});

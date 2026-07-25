@@ -82,6 +82,27 @@
     }
   },
   {
+    "id": "eb-santacruz",
+    "type": "eventbrite",
+    "enabled": true,
+    "note": "Santa Cruz county — over the hill from the South Bay. Santa Cruz, Capitola, Scotts Valley, Watsonville, Aptos, Soquel.",
+    "params": {
+      "mode": "scrape",
+      "locations": [
+        "ca--santa-cruz", "ca--capitola", "ca--scotts-valley", "ca--watsonville", "ca--aptos", "ca--soquel"
+      ],
+      "queries": ["science-and-technology", "technology", "startup", "ai"],
+      "maxPages": 2
+    }
+  },
+  {
+    "id": "luma-santacruz",
+    "type": "luma",
+    "enabled": true,
+    "note": "Luma discover anchored on Santa Cruz coords — the local Luma tech/startup scene.",
+    "params": { "mode": "discover", "slugs": ["ai", "tech"], "latitude": 36.9741, "longitude": -122.0308, "maxPages": 4 }
+  },
+  {
     "id": "eb-terms",
     "type": "eventbrite",
     "enabled": true,

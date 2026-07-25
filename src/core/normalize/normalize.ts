@@ -12,12 +12,14 @@ interface CityMatcher {
 }
 
 export type Normalizer = (raw: RawEvent, now: Date) => CanonicalEvent | null;
+export type CityResolver = (...texts: (string | undefined | null)[]) => { id: string; timezone: string } | null;
 
 /**
- * Build a normalizer bound to a set of cities. Precompiles alias matchers so
- * per-event city resolution is cheap.
+ * Build the city matcher used by both {@link createNormalizer} (at scrape time)
+ * and the re-normalize backfill (to re-resolve stored events after the alias set
+ * changes). One matcher = one definition of "which city is this?".
  */
-export function createNormalizer(cities: CityDef[]): Normalizer {
+export function makeCityResolver(cities: CityDef[]): CityResolver {
   const matchers: CityMatcher[] = cities.map((c) => {
     const terms = [c.label, ...c.aliases]
       .filter(Boolean)
@@ -29,16 +31,21 @@ export function createNormalizer(cities: CityDef[]): Normalizer {
       re: new RegExp(`\\b(${terms.join("|")})\\b`, "i"),
     };
   });
-  const defaultTz = cities[0]?.timezone ?? "UTC";
-
-  function resolveCity(
-    ...texts: (string | undefined | null)[]
-  ): { id: string; timezone: string } | null {
+  return (...texts) => {
     const hay = texts.filter(Boolean).join(" · ");
     if (!hay) return null;
     for (const m of matchers) if (m.re.test(hay)) return { id: m.id, timezone: m.timezone };
     return null;
-  }
+  };
+}
+
+/**
+ * Build a normalizer bound to a set of cities. Precompiles alias matchers so
+ * per-event city resolution is cheap.
+ */
+export function createNormalizer(cities: CityDef[]): Normalizer {
+  const resolveCity = makeCityResolver(cities);
+  const defaultTz = cities[0]?.timezone ?? "UTC";
 
   return (raw, now): CanonicalEvent | null => {
     const title = cleanText(raw.title);

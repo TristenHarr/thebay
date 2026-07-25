@@ -2,7 +2,7 @@ import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ulid } from "ulid";
 import type { CanonicalEvent } from "../../core/models/event";
 import type { SourceConfig } from "../../core/models/source";
-import { mergeEvents } from "../../core/dedup";
+import { mergeEvents, fingerprint } from "../../core/dedup";
 import type {
   EventFilter,
   EventFacets,
@@ -439,6 +439,72 @@ export class D1Repo implements Repository {
       upcomingEvents: Number(totals?.upcoming ?? 0),
       lastRun: last ? { ...last, sources: last.sourceResults ?? [] } : null,
     };
+  }
+
+  /**
+   * Re-resolve every event's city + fingerprint against the current alias set and
+   * dedup in place. Needed whenever cities.json changes: the fingerprint embeds the
+   * resolved city, so a newly-matchable event (e.g. an old "unknown" Santa Cruz row)
+   * would otherwise get a fresh fingerprint on the next scrape and be re-inserted as
+   * a duplicate. Collisions merge into the OLDEST row (which owns any RSVPs/reviews);
+   * dependents are moved with UPDATE OR IGNORE so nothing user-generated is lost.
+   * Idempotent.
+   */
+  async renormalizeCities(
+    resolveCityId: (e: { city: string | null; address: string | null; venueName: string | null }) => string,
+  ): Promise<{ scanned: number; updated: number; merged: number }> {
+    const rows = (await this.db
+      .prepare("SELECT id, fingerprint, title, start_utc, timezone, city, address, venue_name, first_seen_at FROM events")
+      .all<Row>()).results ?? [];
+
+    type Rec = { id: string; oldFp: string; oldCity: string; newCity: string; newFp: string; firstSeen: string };
+    const recs: Rec[] = rows.map((r) => {
+      const newCity = resolveCityId({ city: r.city ?? null, address: r.address ?? null, venueName: r.venue_name ?? null });
+      return {
+        id: r.id,
+        oldFp: r.fingerprint,
+        oldCity: r.city,
+        newCity,
+        newFp: fingerprint({ title: r.title, startUtc: r.start_utc, timezone: r.timezone, city: newCity }),
+        firstSeen: r.first_seen_at ?? "",
+      };
+    });
+
+    // Group by the NEW fingerprint so post-resolution collisions merge into one row.
+    const groups = new Map<string, Rec[]>();
+    for (const rec of recs) {
+      const g = groups.get(rec.newFp);
+      if (g) g.push(rec);
+      else groups.set(rec.newFp, [rec]);
+    }
+
+    // Every table that FK-references events(id); event_sources last so its rows ride along.
+    const FK_TABLES = [
+      "rsvps", "reviews", "event_photos", "points_ledger", "goals", "review_obligations",
+      "subject_reviews", "checkin_tokens", "checkins", "media", "groups", "event_sources",
+    ];
+    let updated = 0;
+    let merged = 0;
+
+    for (const grp of groups.values()) {
+      grp.sort((a, b) => a.firstSeen.localeCompare(b.firstSeen) || a.id.localeCompare(b.id));
+      const canon = grp[0];
+      if (!canon) continue;
+      for (const dup of grp.slice(1)) {
+        for (const t of FK_TABLES) {
+          // OR IGNORE drops a dependent that already exists on the canonical (a
+          // duplicate interaction); it then cascade-deletes with the dup row.
+          await this.db.prepare(`UPDATE OR IGNORE ${t} SET event_id = ? WHERE event_id = ?`).bind(canon.id, dup.id).run();
+        }
+        await this.db.prepare("DELETE FROM events WHERE id = ?").bind(dup.id).run();
+        merged++;
+      }
+      if (canon.newCity !== canon.oldCity || canon.newFp !== canon.oldFp) {
+        await this.db.prepare("UPDATE events SET city = ?, fingerprint = ? WHERE id = ?").bind(canon.newCity, canon.newFp, canon.id).run();
+        updated++;
+      }
+    }
+    return { scanned: rows.length, updated, merged };
   }
 
   async listRuns(limit = 20): Promise<RunSummary[]> {

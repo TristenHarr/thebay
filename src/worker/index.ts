@@ -17,6 +17,8 @@ import type { Env, Vars } from "./env";
 import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-types";
 import { routeFactories } from "./routes";
 import citiesJson from "../../config/cities.json";
+import { makeCityResolver } from "../core/normalize/normalize";
+import { UNKNOWN_CITY } from "../core/models/source";
 import categoriesJson from "../../config/categories.json";
 
 export { GroupRoom } from "../realtime/group-room";
@@ -133,6 +135,17 @@ app.post("/api/admin/scrape-report", async (c) => {
   const parsed = ScrapeReportSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "bad report", issues: parsed.error.issues.slice(0, 5) }, 400);
   return c.json({ ok: true, runId: await new D1Repo(c.env.DB).recordRun(parsed.data) });
+});
+
+// Re-resolve every event's city + fingerprint against the current cities.json and
+// dedup in place. Run after the alias set changes so newly-matchable events don't
+// re-insert as duplicates on the next scrape. Bearer-gated.
+app.post("/api/admin/renormalize", async (c) => {
+  const token = c.env.INGEST_TOKEN;
+  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+  const resolve = makeCityResolver(citiesJson as any);
+  const result = await new D1Repo(c.env.DB).renormalizeCities((e) => resolve(e.city, e.address, e.venueName)?.id ?? UNKNOWN_CITY);
+  return c.json({ ok: true, ...result });
 });
 
 // Run warm-intros autopilot on demand (same work the cron does). Bearer-gated so
