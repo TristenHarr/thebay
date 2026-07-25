@@ -20,6 +20,9 @@
 const BASE = (process.env.BASE || "https://thebay.events").replace(/\/$/, "");
 const IS_LOCAL = /localhost|127\.0\.0\.1/.test(BASE);
 const FULL = process.env.PROD_FULL === "1" || IS_LOCAL;
+// Light mode: public reads + security + no-auth gates only. Creates zero data, so
+// it's safe to run on every deploy as a CI post-deploy smoke.
+const LIGHT = process.env.PROD_LIGHT === "1";
 const STAMP = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 
 // SF Ferry Building (inside the Bay) and Times Square (outside) for the geo-gate.
@@ -149,6 +152,18 @@ async function main() {
       "security headers present on error responses");
   }
 
+  // ── 2b. no-auth gates (create nothing) — always run, incl. the light smoke ──
+  section("2b · No-auth gates");
+  {
+    ok((await agent().post("/api/host", { title: "x", startUtc: "2099-01-01T00:00:00Z" })).status === 401, "POST /api/host without auth → 401");
+    ok((await agent().post("/api/goals", { kind: "overall", title: "x" })).status === 401, "POST /api/goals without auth → 401");
+    ok((await anon.post("/api/admin/ingest", { events: [] })).status === 401, "ingest without bearer → 401");
+  }
+
+  // In light mode we stop here — everything above is read-only / negative, so a CI
+  // post-deploy run leaves no users, communities, or friend requests behind.
+  if (LIGHT) return finish();
+
   // ── 3. auth lifecycle + hardening ──────────────────────────────────────────
   section("3 · Auth (register / login / logout) + hardening");
   const A = agent("A");
@@ -259,19 +274,32 @@ async function main() {
     ok((await A.get("/api/communities/nope-not-real")).status === 404, "unknown community → 404");
   }
 
-  // ── 7. write-gate assertions (create nothing) ──────────────────────────────
-  section("7 · Guards & gates (negative paths — no data created)");
+  // ── 6b. people you may know: imported connections → members ────────────────
+  section("6b · People you may know (imported connections → members)");
   {
-    ok((await agent().post("/api/host", { title: "x", startUtc: "2099-01-01T00:00:00Z" })).status === 401,
-      "POST /api/host without auth → 401");
-    ok((await agent().post("/api/goals", { kind: "overall", title: "x" })).status === 401, "POST /api/goals without auth → 401");
+    const bId = regB.json?.user?.id;
+    // A imports a LinkedIn connection whose email is B's — B should surface as a suggestion.
+    const imp = await A.post("/api/integrations/linkedin/import", {
+      items: [{ externalId: `li:${emailB}`, kind: "connection", payload: { name: "Smoke Bob (from LinkedIn)", email: emailB } }],
+    });
+    ok(imp.status === 200, "import a connection with B's email");
 
+    const sugg = await A.get("/api/integrations/suggestions");
+    ok(sugg.status === 200 && (sugg.json?.suggestions || []).some((s) => s.id === bId), "B surfaces in people-you-may-know");
+
+    if (bId) {
+      ok((await A.post(`/api/friends/${bId}/request`)).status === 200, "connect to the suggested member");
+      const after = await A.get("/api/integrations/suggestions");
+      ok(!(after.json?.suggestions || []).some((s) => s.id === bId), "after connecting, B drops off the suggestions");
+    }
+  }
+
+  // ── 7. authed write-gate (creates nothing) ─────────────────────────────────
+  section("7 · Authed gate (negative path — no data created)");
+  {
     // bulletin board is GPS-gated to the Bay — a note from outside must 403
     const outside = await A.post("/api/notes", { ...OUT_BAY, body: `should be blocked ${STAMP}` });
     ok(outside.status === 403, "board note from outside the Bay → 403 (GPS gate)");
-
-    // admin ingest is bearer-gated
-    ok((await anon.post("/api/admin/ingest", { events: [] })).status === 401, "ingest without bearer → 401");
   }
 
   // ── 8. full destructive journey (opt-in; creates public data) ──────────────
@@ -311,10 +339,14 @@ async function main() {
     ok(note.status === 200 && note.json?.id, "board note from inside the Bay → posted");
   }
 
-  // ── summary ────────────────────────────────────────────────────────────────
-  console.log(`\n\x1b[1mResult:\x1b[0m ${pass} passed, ${fail} failed, ${skip} skipped  (${BASE})`);
-  if (fail) { console.log("\x1b[31mFailures:\x1b[0m\n  - " + failures.join("\n  - ")); process.exit(1); }
-  console.log("\x1b[32mAll production checks passed — the live site is fully navigable by an agent.\x1b[0m");
+  return finish();
+
+  // hoisted — callable from the light-mode early return above
+  function finish() {
+    console.log(`\n\x1b[1mResult:\x1b[0m ${pass} passed, ${fail} failed, ${skip} skipped  (${BASE}${LIGHT ? " · light" : ""})`);
+    if (fail) { console.log("\x1b[31mFailures:\x1b[0m\n  - " + failures.join("\n  - ")); process.exit(1); }
+    console.log(`\x1b[32mAll production checks passed — the live site is fully navigable by an agent.\x1b[0m`);
+  }
 }
 
 main().catch((e) => { console.error("\x1b[31mfatal:\x1b[0m", e); process.exit(2); });

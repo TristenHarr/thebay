@@ -40,7 +40,7 @@ export const api = createApi({
 
     // social graph
     getFriends: b.query<{ friends: any[]; pending: any[] }, void>({ query: () => "api/friends", providesTags: ["Friends"] }),
-    requestFriend: b.mutation<any, string>({ query: (uid) => ({ url: `api/friends/${uid}/request`, method: "POST" }), invalidatesTags: ["Friends"] }),
+    requestFriend: b.mutation<any, string>({ query: (uid) => ({ url: `api/friends/${uid}/request`, method: "POST" }), invalidatesTags: ["Friends", "Integrations"] }),
     respondFriend: b.mutation<any, { uid: string; accept: boolean }>({ query: ({ uid, accept }) => ({ url: `api/friends/${uid}/respond`, method: "POST", body: { accept } }), invalidatesTags: ["Friends"] }),
     friendsFeed: b.query<{ items: any[] }, void>({ query: () => "api/feed/friends" }),
 
@@ -95,6 +95,7 @@ export const api = createApi({
     attachMedia: b.mutation<any, { id: string; eventId?: string; caption?: string }>({ query: ({ id, ...body }) => ({ url: `api/media/${id}`, method: "PATCH", body }), invalidatesTags: ["Media"] }),
     getIntegrations: b.query<{ accounts: any[] }, void>({ query: () => "api/integrations", providesTags: ["Integrations"] }),
     getImported: b.query<{ items: any[] }, string>({ query: (provider) => `api/integrations/${provider}/items`, providesTags: ["Integrations"] }),
+    getSuggestions: b.query<{ suggestions: any[] }, void>({ query: () => "api/integrations/suggestions", providesTags: ["Integrations", "Friends"] }),
     connectIntegration: b.mutation<any, { provider: string; token?: any }>({ query: ({ provider, token }) => ({ url: `api/integrations/${provider}/connect`, method: "POST", body: token || {} }), invalidatesTags: ["Integrations"] }),
     importIntegration: b.mutation<{ imported: number; total: number }, { provider: string; ics?: string; items?: any[] }>({ query: ({ provider, ...body }) => ({ url: `api/integrations/${provider}/import`, method: "POST", body }), invalidatesTags: ["Integrations"] }),
     subscribeCalendar: b.mutation<{ url: string }, void>({ query: () => ({ url: "api/me/calendar/subscribe", method: "POST" }) }),
@@ -112,7 +113,7 @@ export const {
   useGetIntrosQuery, useCreateIntroMutation, useForwardIntroMutation, useAcceptIntroMutation,
   useGetMentorsQuery, useSetMentorProfileMutation, useRequestMentorMutation, useMentorInboxQuery, useRespondMentorMutation,
   useGetDeckQuery, useSetMatchPrefsMutation, useMatchActMutation,
-  useGetCommunitiesQuery, useCreateCommunityMutation, useGetCommunityQuery, useJoinCommunityMutation, useGetMediaQuery, useGetIntegrationsQuery, useSubscribeCalendarMutation,
+  useGetCommunitiesQuery, useCreateCommunityMutation, useGetCommunityQuery, useJoinCommunityMutation, useGetMediaQuery, useGetIntegrationsQuery, useGetSuggestionsQuery, useSubscribeCalendarMutation,
   useGetNetworkGraphQuery, useGetAchievementsQuery, useGetPublicAchievementsQuery, useGetPublicGoalsQuery,
   useGetNotesQuery, usePostNoteMutation,
   useIssueCheckinTokenMutation, useCheckInMutation, useGetCheckinsQuery,

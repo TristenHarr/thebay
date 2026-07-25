@@ -79,7 +79,15 @@ Quality is enforced, not hoped for:
 npm run verify        # typecheck + all unit/integration tests
 npm run test:nav      # Playwright: every screen renders, guards redirect   (needs `npm run dev`)
 npm run test:actions  # Playwright: real multi-user journeys through the UI  (needs `npm run dev`)
+npm run test:prod     # navigate the LIVE site as an agent over HTTP (safe subset)
 ```
+
+`test:prod` (`tests/prod-e2e.mjs`) drives production through its JSON API — public
+reads, security headers, the full auth lifecycle, self-scoped writes, per-community
+rankings, people-you-may-know, and the negative gates. It's **safe against prod by
+default** (no publicly-visible writes); `PROD_LIGHT=1` runs a zero-footprint
+read-only smoke (used as a **post-deploy CI gate**), and `PROD_FULL=1` adds the
+host→check-in→review journey. Point it anywhere with `BASE=…`.
 
 ## Data pipeline (the scraper)
 

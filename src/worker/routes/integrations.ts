@@ -34,6 +34,11 @@ export function integrationRoutes(): App {
 
   app.get("/api/integrations", requireAuth, async (c) => c.json({ accounts: await ir(c).listAccounts(c.get("user")!.id) }));
 
+  // "People you may know" — imported connections who are already Bay members.
+  app.get("/api/integrations/suggestions", requireAuth, async (c) =>
+    c.json({ suggestions: await ir(c).suggestionsFromImports(c.get("user")!.id) }),
+  );
+
   // imported items (events copied in, LinkedIn connections, …)
   app.get("/api/integrations/:provider/items", requireAuth, async (c) => {
     const provider = c.req.param("provider") as Provider;

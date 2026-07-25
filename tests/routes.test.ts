@@ -423,3 +423,32 @@ describe("per-community rankings (/api/communities/:id)", () => {
     expect((await call(t, "/api/communities/does-not-exist", { cookie: ann.cookie })).status).toBe(404);
   });
 });
+
+describe("people-you-may-know (/api/integrations/suggestions)", () => {
+  it("surfaces imported connections who are Bay members, then lets you connect", async () => {
+    const me = await login(t, "me@x.com", "Me");
+    const alice = await login(t, "alice@x.com", "Alice");
+    await enableSocial(me.cookie);
+    await enableSocial(alice.cookie);
+
+    // no imports yet → no suggestions
+    expect((await call(t, "/api/integrations/suggestions", { cookie: me.cookie })).json.suggestions).toEqual([]);
+
+    // import a LinkedIn connection whose email is Alice's
+    const imp = await call(t, "/api/integrations/linkedin/import", {
+      method: "POST", cookie: me.cookie,
+      body: { items: [{ externalId: "li:alice", kind: "connection", payload: { name: "Alice A", email: "alice@x.com" } },
+                       { externalId: "li:ghost", kind: "connection", payload: { name: "Ghost", email: "nobody@x.com" } }] },
+    });
+    expect(imp.json.imported).toBe(2);
+
+    const sugg = await call(t, "/api/integrations/suggestions", { cookie: me.cookie });
+    expect(sugg.json.suggestions.map((s: any) => s.displayName)).toEqual(["Alice"]);
+    const target = sugg.json.suggestions[0];
+    expect(target.provider).toBe("linkedin");
+
+    // connect via the normal friend endpoint, then the suggestion disappears
+    expect((await call(t, `/api/friends/${target.id}/request`, { method: "POST", cookie: me.cookie })).status).toBe(200);
+    expect((await call(t, "/api/integrations/suggestions", { cookie: me.cookie })).json.suggestions).toEqual([]);
+  });
+});

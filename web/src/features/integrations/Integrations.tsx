@@ -1,7 +1,35 @@
 import { useRef, useState } from "react";
-import { useGetIntegrationsQuery, useImportIntegrationMutation, useConnectIntegrationMutation, useGetImportedQuery } from "../../api";
-import { Button, Card, Spinner, PageHeader, Badge } from "../../ui/kit";
+import { Link } from "react-router-dom";
+import { useGetIntegrationsQuery, useImportIntegrationMutation, useConnectIntegrationMutation, useGetImportedQuery, useGetSuggestionsQuery, useRequestFriendMutation } from "../../api";
+import { Button, Card, Spinner, PageHeader, Badge, Avatar } from "../../ui/kit";
 import { parseLinkedInCsv } from "../../../../src/integrations/linkedin";
+
+/** People you may know — imported connections who are already on The Bay. One tap
+ *  sends a friend request; RTK Query invalidation drops them from the list. */
+function PeopleYouMayKnow() {
+  const { data, isLoading } = useGetSuggestionsQuery();
+  const [request, { isLoading: sending }] = useRequestFriendMutation();
+  const suggestions = data?.suggestions || [];
+  if (isLoading || !suggestions.length) return null; // silent until an import produces a match
+  return (
+    <div className="mt-8" data-testid="people-you-may-know">
+      <h2 className="mb-1 text-lg font-semibold">People you may know</h2>
+      <p className="mb-3 text-sm text-muted">From your imported connections — already on The Bay.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {suggestions.map((s: any) => (
+          <Card key={s.id} className="flex items-center gap-3 p-3">
+            <Avatar user={s} />
+            <div className="min-w-0 flex-1">
+              <Link to={`/u/${s.handle}`} className="font-semibold hover:text-accent">{s.displayName}</Link>
+              <div className="truncate text-xs text-muted">via {s.provider}{s.matchedName ? ` · ${s.matchedName}` : ""}</div>
+            </div>
+            <Button variant="ghost" disabled={sending} onClick={() => request(s.id)}>Connect</Button>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** Shows what we've pulled in from a provider — proof the richer import worked. */
 function ImportedSummary({ provider }: { provider: string }) {
@@ -80,6 +108,7 @@ export function Integrations() {
           </Card>
         ))}
       </div>
+      <PeopleYouMayKnow />
     </div>
   );
 }

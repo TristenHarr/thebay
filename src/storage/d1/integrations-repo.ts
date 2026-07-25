@@ -56,6 +56,48 @@ export class IntegrationsRepo {
     }
     return inserted;
   }
+  /**
+   * "People you may know" — imported connections (kind='connection') whose email
+   * matches a Bay member, minus yourself and anyone you already have a friendship
+   * with (pending, accepted, or blocked). Case-insensitive on email; de-duplicated
+   * per member even if imported from several providers/rows. Opted-out (private)
+   * members are excluded. Returns the member to connect with plus the provider and
+   * the name the CSV knew them by, for UI context.
+   */
+  async suggestionsFromImports(
+    userId: string,
+  ): Promise<Array<{ id: string; displayName: string; handle: string; provider: string; matchedName: string | null }>> {
+    const res = await this.db
+      .prepare(
+        `SELECT u.id, u.display_name AS displayName, u.handle,
+                MIN(ii.provider) AS provider,
+                MIN(json_extract(ii.payload_json, '$.name')) AS matchedName
+           FROM imported_items ii
+           JOIN users u ON lower(u.email) = lower(json_extract(ii.payload_json, '$.email'))
+          WHERE ii.user_id = ?
+            AND ii.kind = 'connection'
+            AND coalesce(json_extract(ii.payload_json, '$.email'), '') <> ''
+            AND u.id <> ?
+            AND u.social_enabled = 1
+            AND NOT EXISTS (
+              SELECT 1 FROM friendships f
+               WHERE (f.user_low = ? AND f.user_high = u.id)
+                  OR (f.user_low = u.id AND f.user_high = ?)
+            )
+          GROUP BY u.id, u.display_name, u.handle
+          ORDER BY u.display_name`,
+      )
+      .bind(userId, userId, userId, userId)
+      .all<Row>();
+    return (res.results ?? []).map((r) => ({
+      id: r.id,
+      displayName: r.displayName,
+      handle: r.handle,
+      provider: r.provider,
+      matchedName: r.matchedName ?? null,
+    }));
+  }
+
   async listImported(userId: string, provider?: Provider): Promise<Array<{ externalId: string; kind: string; payload: unknown }>> {
     const stmt = provider
       ? this.db.prepare("SELECT external_id, kind, payload_json FROM imported_items WHERE user_id=? AND provider=? ORDER BY created_at DESC").bind(userId, provider)

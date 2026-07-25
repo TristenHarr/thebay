@@ -52,3 +52,13 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Prove the just-shipped deployment actually serves: health, the REAL /app
+      # bundle (guards the build-order regression), security headers, pagination,
+      # and the no-auth gates. PROD_LIGHT creates zero data, so it's safe every run.
+      - name: Smoke-test the live deployment
+        run: |
+          sleep 5
+          PROD_LIGHT=1 node tests/prod-e2e.mjs
+        env:
+          BASE: https://thebay.events
