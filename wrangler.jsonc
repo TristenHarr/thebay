@@ -48,7 +48,10 @@
   // The features degrade to their deterministic core when this is unavailable.
   "ai": { "binding": "AI" },
   // Provision the custom domain on deploy (the zone must be in your Cloudflare account).
-  "routes": [{ "pattern": "thebay.events", "custom_domain": true }],
+  "routes": [
+    { "pattern": "thebay.events", "custom_domain": true },
+    { "pattern": "www.thebay.events", "custom_domain": true }
+  ],
   // Warm-intros autopilot: every 15 min the scheduled handler forwards eligible
   // intro requests for connectors who set their agent to 'auto'. See src/worker/index.ts.
   "triggers": { "crons": ["*/15 * * * *"] }

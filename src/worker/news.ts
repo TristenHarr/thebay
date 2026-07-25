@@ -21,7 +21,7 @@ import type { Env, Vars } from "./env";
 import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-types";
 import { harden } from "./security";
 import { runNewsIngest } from "../news/ingest";
-import { canonicalOrigin, newsOrigin } from "./origin";
+import { canonicalOrigin, newsOrigin, apexRedirectUrl } from "./origin";
 import { authRoutes } from "./routes/auth";
 import { optionalAuth, requireAuth } from "../auth/middleware";
 import { NewsRepo, type Story } from "../storage/d1/news-repo";
@@ -78,6 +78,10 @@ const htmlResponse = (body: string, status = 200) =>
 
 // ── middleware ───────────────────────────────────────────────────────────────
 app.use("*", async (c, next) => {
+  // www.thebay.news → thebay.news, before anything else looks at the path.
+  const apex = apexRedirectUrl(c.req.url);
+  if (apex) return harden(c.redirect(apex, 301));
+
   const visitor = c.req.header("cf-visitor") || "";
   if (visitor.includes('"scheme":"http"')) {
     const u = new URL(c.req.url);

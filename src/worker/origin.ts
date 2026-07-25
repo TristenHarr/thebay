@@ -21,6 +21,27 @@ export function canonicalOrigin(env: { PUBLIC_ORIGIN?: string }): string {
   return (env.PUBLIC_ORIGIN || CANONICAL_ORIGIN).replace(/\/+$/, "");
 }
 
+/**
+ * If a request arrived on a `www.` host, the canonical URL without it.
+ *
+ * Browsers autocomplete to `www.` constantly, and a bare Worker custom domain
+ * covers only the exact hostname — so `www.` resolves to nothing and the visitor
+ * gets a connection failure, not a 404. Serving both and 301'ing to the apex
+ * keeps one canonical host for search engines and stops the site looking dead to
+ * anyone whose browser filled in the `www.` for them.
+ */
+export function apexRedirectUrl(requestUrl: string): string | null {
+  try {
+    const u = new URL(requestUrl);
+    if (!u.hostname.toLowerCase().startsWith("www.")) return null;
+    u.hostname = u.hostname.slice(4);
+    u.protocol = "https:";
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 /** Canonical origin of the news site. Used for rel=canonical, OG urls, sitemap
  *  and RSS entries — all of which must be absolute and must not vary by request. */
 export function newsOrigin(env: { NEWS_ORIGIN?: string }): string {

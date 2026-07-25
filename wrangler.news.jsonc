@@ -53,7 +53,13 @@
   // Attach the domain in the dashboard FIRST and verify the cert, then deploy —
   // wrangler reconciles routes after uploading the script, so a provisioning
   // hiccup would fail the deploy with the new script already live.
-  "routes": [{ "pattern": "thebay.news", "custom_domain": true }],
+  // Both hostnames are served; the Worker 301s www → apex so there's one
+  // canonical host. A custom domain matches the exact hostname only, so without
+  // the www entry that form doesn't resolve at all.
+  "routes": [
+    { "pattern": "thebay.news", "custom_domain": true },
+    { "pattern": "www.thebay.news", "custom_domain": true }
+  ],
   // Pull HN / Lobsters / RSS and refresh the ranked front page.
   "triggers": { "crons": ["*/15 * * * *"] }
 }

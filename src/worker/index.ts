@@ -17,6 +17,7 @@ import type { Env, Vars } from "./env";
 import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-types";
 import { routeFactories } from "./routes";
 import { harden } from "./security";
+import { apexRedirectUrl } from "./origin";
 import citiesJson from "../../config/cities.json";
 import { makeCityResolver } from "../core/normalize/normalize";
 import { looksOutOfRegion } from "../core/normalize/region";
@@ -56,6 +57,11 @@ export { harden };
 
 // Force HTTPS (Safari flags a reachable http:// origin as "not secure").
 app.use("*", async (c, next) => {
+  // www.thebay.events → thebay.events. A custom domain covers only the exact
+  // hostname, so without this the www. form fails to connect entirely.
+  const apex = apexRedirectUrl(c.req.url);
+  if (apex) return harden(c.redirect(apex, 301));
+
   const visitor = c.req.header("cf-visitor") || "";
   if (visitor.includes('"scheme":"http"')) {
     const u = new URL(c.req.url);

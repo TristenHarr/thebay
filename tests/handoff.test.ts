@@ -8,6 +8,7 @@ import { mintHandoff, claimHandoff, safeNextPath, isTopLevelNavigation } from ".
 import { makeTestEnv } from "./helpers/app";
 import { SocialRepo } from "../src/storage/d1/social-repo";
 import { authRoutes } from "../src/worker/routes/auth";
+import { apexRedirectUrl } from "../src/worker/origin";
 
 const NOW = Date.parse("2026-07-25T12:00:00.000Z");
 const NEWS = "thebay.news";
@@ -151,5 +152,27 @@ describe("handoff tokens", () => {
       claimHandoff(env, t, NEWS, NOW + 100),
     ]);
     expect([a, b].filter(Boolean)).toHaveLength(1);
+  });
+});
+
+describe("www → apex redirect", () => {
+  it("redirects www to the bare host, preserving path and query", () => {
+    expect(apexRedirectUrl("https://www.thebay.news/item/abc/slug?x=1"))
+      .toBe("https://thebay.news/item/abc/slug?x=1");
+    expect(apexRedirectUrl("http://www.thebay.events/app/"))
+      .toBe("https://thebay.events/app/"); // also upgrades to https
+  });
+
+  it("leaves apex hosts alone", () => {
+    expect(apexRedirectUrl("https://thebay.news/")).toBeNull();
+    expect(apexRedirectUrl("https://thebay.events/app/")).toBeNull();
+  });
+
+  it("does not strip a leading 'www' that is part of a longer label", () => {
+    expect(apexRedirectUrl("https://wwwx.thebay.news/")).toBeNull();
+  });
+
+  it("returns null for junk rather than throwing", () => {
+    expect(apexRedirectUrl("not a url")).toBeNull();
   });
 });
