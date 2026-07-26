@@ -108,7 +108,14 @@ describe("lock: dedup merge cannot silently delete data", () => {
   it("names no table that has since been dropped", () => {
     // A stale entry means `UPDATE ... SET event_id` runs against a missing table
     // and throws mid-merge, leaving the catalog half-migrated.
-    const raw = committedSchema();
+    //
+    // Note the asymmetry with the test above, which is deliberate. That one asks
+    // "must this be listed?" and uses the COMMITTED schema, so it never demands an
+    // entry for someone else's in-flight table. This one asks "does this listed
+    // table exist?" and uses the FULL on-disk schema, so registering a table whose
+    // migration you haven't committed yet is allowed — that's the normal order of
+    // work. A genuinely dropped table is absent from both and still fails here.
+    const { raw } = makeTestDb();
     const live = new Set(liveTables(raw));
     const ghosts = [...MERGE_FK_TABLES, ...Object.keys(MERGE_EXEMPT_TABLES)].filter((t) => !live.has(t));
     expect(ghosts, `Listed for merge but not in the schema: ${ghosts.join(", ")}`).toEqual([]);
