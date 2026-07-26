@@ -5,7 +5,8 @@ import { canonicalizeUrl, urlHash, displayDomain } from "../../news/canonical";
 import { rankStories, type Rankable } from "../../news/rank";
 import { LOCAL_ORIGINS } from "../../news/filter";
 import type { IngestedStory } from "../../news/ingest/types";
-import { deriveTopics } from "../../news/summarize";
+import { deriveTopics, looksLikeCommercialTraining } from "../../news/summarize";
+import { isTemplateDuplicate } from "../../news/dedup";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
@@ -590,11 +591,21 @@ export class NewsRepo {
       .bind(atIso, limit * 20)
       .all<Row>();
 
+    // Titles already posted as event stories, so one course template doesn't
+    // occupy the whole front page in fifteen different towns.
+    const posted = await this.db
+      .prepare("SELECT title FROM stories WHERE origin = 'event' AND dead = 0 ORDER BY created_at DESC LIMIT 300")
+      .all<Row>();
+    const seenTitles: string[] = (posted.results ?? []).map((x) => String(x.title));
+
     let n = 0;
     for (const e of r.results ?? []) {
       if (n >= limit) break;
-      const topics = deriveTopics(String(e.title ?? ""));
+      const title0 = String(e.title ?? "");
+      const topics = deriveTopics(title0);
       if (!topics.length) continue; // not news, just an event
+      if (looksLikeCommercialTraining(title0)) continue; // a course ad, not news
+      if (isTemplateDuplicate(title0, seenTitles)) continue; // same listing, different city
       const link = e.url || null;
       const canonical = link ? canonicalizeUrl(link) : null;
       const hash = canonical ? urlHash(canonical) : null;
@@ -635,6 +646,7 @@ export class NewsRepo {
         .prepare("INSERT OR IGNORE INTO story_sources (story_id, origin, external_id, fetched_at) VALUES (?, 'event', ?, ?)")
         .bind(id, e.id, atIso)
         .run();
+      seenTitles.push(title);
       n++;
     }
     return n;
@@ -702,6 +714,67 @@ export class NewsRepo {
   async attendeesOf(eventId: string): Promise<Set<string>> {
     const r = await this.db.prepare("SELECT user_id FROM checkins WHERE event_id = ?").bind(eventId).all<Row>();
     return new Set((r.results ?? []).map((x) => x.user_id));
+  }
+
+  // ── profiles ────────────────────────────────────────────────────────────────
+
+  /** A reader's public identity on the news site, by handle. */
+  async userByHandle(handle: string): Promise<{ id: string; handle: string; displayName: string; createdAt: string } | null> {
+    const r = await this.db
+      .prepare("SELECT id, handle, display_name, created_at FROM users WHERE handle = ?")
+      .bind(String(handle ?? "").toLowerCase())
+      .first<Row>();
+    return r ? { id: r.id, handle: r.handle, displayName: r.display_name, createdAt: r.created_at } : null;
+  }
+
+  /** What they've submitted here (their own posts only, never aggregated rows). */
+  async storiesByAuthor(userId: string, limit = 30): Promise<Story[]> {
+    const r = await this.db
+      .prepare(`${SELECT_STORY} WHERE s.author_id = ? AND s.dead = 0 ORDER BY s.created_at DESC LIMIT ?`)
+      .bind(userId, limit)
+      .all<Row>();
+    const stories = (r.results ?? []).map(rowToStory);
+    await this.attachSources(stories);
+    return stories;
+  }
+
+  /** Their comments, with the story each belongs to for context. */
+  async commentsByAuthor(userId: string, limit = 30): Promise<(Comment & { storyTitle: string; storySlug: string | null })[]> {
+    const r = await this.db
+      .prepare(
+        `SELECT c.id, c.story_id, c.parent_id, c.body, c.depth, c.vote_count, c.dead, c.created_at,
+                c.author_id, u.display_name AS author, u.handle,
+                s.title AS story_title, s.slug AS story_slug
+           FROM comments c
+           JOIN stories s ON s.id = c.story_id
+           LEFT JOIN users u ON u.id = c.author_id
+          WHERE c.author_id = ? AND c.dead = 0 AND s.dead = 0
+          ORDER BY c.created_at DESC LIMIT ?`,
+      )
+      .bind(userId, limit)
+      .all<Row>();
+    return (r.results ?? []).map((x) => ({
+      id: x.id, storyId: x.story_id, parentId: x.parent_id ?? null, body: x.body,
+      depth: x.depth ?? 0, voteCount: x.vote_count ?? 0, dead: x.dead ?? 0, createdAt: x.created_at,
+      authorId: x.author_id ?? null, author: x.author ?? null, handle: x.handle ?? null,
+      storyTitle: x.story_title, storySlug: x.story_slug ?? null,
+    }));
+  }
+
+  /** Karma: points earned here, so a profile says something. */
+  async authorStats(userId: string): Promise<{ stories: number; comments: number; points: number }> {
+    const r = await this.db
+      .prepare(
+        // Plain positional binds, repeated — the convention everywhere in this
+        // layer. Numbered (?1) placeholders work on D1 but not under the
+        // better-sqlite3 test shim, so they'd pass in production and fail in CI.
+        `SELECT (SELECT COUNT(*) FROM stories WHERE author_id = ? AND dead = 0) AS stories,
+                (SELECT COUNT(*) FROM comments WHERE author_id = ? AND dead = 0) AS comments,
+                (SELECT COALESCE(SUM(vote_count), 0) FROM stories WHERE author_id = ? AND dead = 0) AS points`,
+      )
+      .bind(userId, userId, userId)
+      .first<Row>();
+    return { stories: r?.stories ?? 0, comments: r?.comments ?? 0, points: r?.points ?? 0 };
   }
 
   // ── sitemap / feeds ─────────────────────────────────────────────────────────

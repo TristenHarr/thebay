@@ -6,9 +6,10 @@
 import { describe, it, expect } from "vitest";
 import { canonicalizeUrl, urlHash, displayDomain } from "../src/news/canonical";
 import { hotScore, rankStories, type Rankable } from "../src/news/rank";
-import { isDuplicateTitle, pickCanonicalTitle } from "../src/news/dedup";
+import { isDuplicateTitle, pickCanonicalTitle, templateKey, isTemplateDuplicate } from "../src/news/dedup";
 import { applyNewsFilter } from "../src/news/filter";
 import { rateVerdict, LIMITS } from "../src/news/ratelimit";
+import { looksLikeCommercialTraining } from "../src/news/summarize";
 
 const NOW = Date.parse("2026-07-25T12:00:00.000Z");
 const hoursAgo = (h: number) => new Date(NOW - h * 3600_000).toISOString();
@@ -242,5 +243,67 @@ describe("rateVerdict", () => {
 
   it("is stricter for submissions than for comments", () => {
     expect(LIMITS.submit.max).toBeLessThan(LIMITS.comment.max);
+  });
+});
+
+describe("templateKey / isTemplateDuplicate", () => {
+  it("strips the trailing city so vendor templates collapse together", () => {
+    const a = templateKey("Enterprise AI Strategy Mastery 1 Day Training in San Ramon, CA");
+    const b = templateKey("Enterprise AI Strategy Mastery 1 Day Training in Pleasanton, CA");
+    const c = templateKey("Intelligent Enterprise AI Skills 1 Day Training – San Carlos, CA");
+    expect(a).toBe(b);
+    expect(a).toBe("Enterprise AI Strategy Mastery 1 Day Training");
+    expect(c).toBe("Intelligent Enterprise AI Skills 1 Day Training");
+  });
+
+  it("leaves genuinely distinct titles distinct", () => {
+    expect(templateKey("Hardware Founders Night: MEMS and photonics"))
+      .toBe("Hardware Founders Night: MEMS and photonics");
+    expect(isTemplateDuplicate("Hardware Founders Night: MEMS and photonics",
+      ["Enterprise AI Strategy Mastery 1 Day Training in San Ramon, CA"])).toBe(false);
+  });
+
+  it("catches the same listing posted in another city", () => {
+    expect(isTemplateDuplicate(
+      "Enterprise AI Strategy Mastery 1 Day Training in Berkeley, CA",
+      ["Enterprise AI Strategy Mastery 1 Day Training in San Ramon, CA"],
+    )).toBe(true);
+  });
+
+  it("handles empty and odd input without throwing", () => {
+    expect(templateKey("")).toBe("");
+    expect(isTemplateDuplicate("", ["x"])).toBe(false);
+    expect(isTemplateDuplicate("anything", [])).toBe(false);
+  });
+});
+
+describe("looksLikeCommercialTraining", () => {
+  it("catches the course-vendor listings that flooded the front page", () => {
+    for (const t of [
+      "Generative AI for Business Leaders 1 Day Training in Berkeley, CA",
+      "Enterprise AI Strategy Mastery 1 Day Training in San Ramon, CA",
+      "SECO - IT-Security Foundation : 2-Day Workshop in San Jose, CA",
+      "Data Pipeline Engineering 2 Days Training in Oakland, CA",
+      "Advanced Enterprise AI Implementation 1 Day Training in Sunnyvale, CA",
+    ]) {
+      expect(looksLikeCommercialTraining(t), t).toBe(true);
+    }
+  });
+
+  it("leaves real community events alone", () => {
+    for (const t of [
+      "Hardware Founders Night: MEMS and photonics",
+      "Investor Connect: Pitch & Deal Flow Night | San Jose",
+      "Startup Networking San Jose: Founders, Investors & Talent Mixer",
+      "Open World Hackathon: building the future of physical AI",
+      "Robotics & Automation Luncheon",
+      "AI & The Law: Who's Responsible When Machines Decide?",
+    ]) {
+      expect(looksLikeCommercialTraining(t), t).toBe(false);
+    }
+  });
+
+  it("handles empty input", () => {
+    expect(looksLikeCommercialTraining("")).toBe(false);
   });
 });

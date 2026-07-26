@@ -28,6 +28,7 @@ const api = (u, method, path, data) => u.req[method](`${B}${path}`, data ? { dat
 const alice = await mkUser("alice", "Alice Founder");
 const bob = await mkUser("bob", "Bob Builder");
 const cara = await mkUser("cara", "Cara Connector");
+const dave = await mkUser("dave", "Dave Discoverable"); // used only by people-you-may-know (never befriended)
 
 // ── 1. Set a goal (Alice, UI) ────────────────────────────────────────────────
 await step("Alice sets a goal", async () => {
@@ -175,21 +176,23 @@ await step("Alice creates a community and opens its per-community ranking board"
 
 // ── 12. People-you-may-know: import a connection → suggestion → connect (UI) ──
 await step("An imported connection surfaces as people-you-may-know and connects", async () => {
-  // Alice imports a LinkedIn connection whose email is Cara's → Cara should surface
+  // Alice imports a LinkedIn connection whose email is Dave's (a non-friend)
   await api(alice, "post", "/api/integrations/linkedin/import", {
-    items: [{ externalId: "li:" + cara.user.email, kind: "connection", payload: { name: cara.user.displayName, email: cara.user.email } }],
+    items: [{ externalId: "li:" + dave.user.email, kind: "connection", payload: { name: dave.user.displayName, email: dave.user.email } }],
   });
+  // deterministic: the API surfaces Dave as a suggestion
+  const before = await (await api(alice, "get", "/api/integrations/suggestions")).json();
+  const surfaced = (before.suggestions || []).some((s) => s.id === dave.user.id);
+  // UI: the section renders + the Connect button works
   await alice.page.goto(`${B}/app/integrations`, { waitUntil: "networkidle" });
   await alice.page.waitForSelector('[data-testid="people-you-may-know"]', { timeout: 8000 }).catch(() => {});
-  const surfaced = (await alice.page.locator('[data-testid="people-you-may-know"]').count()) > 0;
-  if (surfaced) {
-    await alice.page.locator('[data-testid="people-you-may-know"] button:has-text("Connect")').first().click().catch(() => {});
-    await alice.page.waitForTimeout(500);
-  }
-  // verify a friend request went out (deterministic, via API)
-  const fr = await (await api(alice, "get", "/api/friends")).json();
-  const requested = (fr.pending || []).some((p) => p.id === cara.user.id) || (fr.friends || []).some((f) => f.id === cara.user.id);
-  return surfaced && requested;
+  const uiRendered = (await alice.page.locator('[data-testid="people-you-may-know"]').count()) > 0;
+  await alice.page.locator('[data-testid="people-you-may-know"] button:has-text("Connect")').first().click().catch(() => {});
+  await alice.page.waitForTimeout(700);
+  // connecting creates a pending friendship, which removes Dave from suggestions
+  const after = await (await api(alice, "get", "/api/integrations/suggestions")).json();
+  const connected = !(after.suggestions || []).some((s) => s.id === dave.user.id);
+  return surfaced && uiRendered && connected;
 });
 
 // ── 13. AI networking agent: enable + switch to Autopilot (UI) ───────────────

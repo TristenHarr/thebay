@@ -39,3 +39,33 @@ export function pickCanonicalTitle(titles: readonly string[]): string {
   if (!cleaned.length) return "";
   return cleaned.reduce((best, t) => (t.length < best.length ? t : best));
 }
+
+/**
+ * Strip the trailing location from an event title.
+ *
+ * Course vendors carpet-bomb Eventbrite with one template per city — "…1 Day
+ * Training in Menlo Park, CA", "…in San Ramon, CA", "…– San Carlos, CA" — which
+ * are the same listing fifteen times over. Removing the location makes those
+ * collapse to one string, so near-duplicate detection can catch them. Genuinely
+ * distinct events keep distinct titles once the city is gone.
+ */
+export function templateKey(title: string): string {
+  return String(title ?? "")
+    // "… in Menlo Park, CA" / "… – San Carlos, CA" / "… | San Jose"
+    .replace(/\s*[-–—|,]?\s*\b(?:in|at|near)\b\s+[A-Z][\w.'-]*(?:\s+[A-Z][\w.'-]*){0,3}\s*,?\s*(?:CA|California)?\s*$/i, "")
+    .replace(/\s*[-–—|]\s*[A-Z][\w.'-]*(?:\s+[A-Z][\w.'-]*){0,3}\s*,?\s*(?:CA|California)\s*$/i, "")
+    .replace(/\s*,\s*(?:CA|California)\s*$/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/**
+ * True when `title` is the same listing as one already posted, ignoring the city.
+ * Used to keep one entry per template on the front page instead of a column of
+ * the same course in fifteen towns.
+ */
+export function isTemplateDuplicate(title: string, existing: readonly string[]): boolean {
+  const key = templateKey(title);
+  if (!key) return false;
+  return existing.some((e) => isDuplicateTitle(key, templateKey(e)));
+}

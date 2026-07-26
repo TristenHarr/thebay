@@ -14,6 +14,33 @@ const nowIso = () => new Date().toISOString();
 export class GraphRepo {
   constructor(private db: D1Database) {}
 
+  /**
+   * Accepted friendship edges touching any of `ids`.
+   *
+   * CHUNKED, and it has to be: the natural form of this query is
+   * `user_low IN (…) OR user_high IN (…)`, which binds the id list TWICE. D1
+   * caps a statement at 100 bound parameters, so a user with ~50 connections
+   * would 500 the network graph in production while every small-fixture test
+   * passed. 45 per chunk keeps the doubled bind under the cap.
+   */
+  private async edgesTouching(ids: string[]): Promise<{ user_low: string; user_high: string }[]> {
+    const out: { user_low: string; user_high: string }[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < ids.length; i += 45) {
+      const chunk = ids.slice(i, i + 45);
+      const ph = chunk.map(() => "?").join(",");
+      const r = await this.db
+        .prepare(`SELECT user_low, user_high FROM friendships WHERE status = 'accepted' AND (user_low IN (${ph}) OR user_high IN (${ph}))`)
+        .bind(...chunk, ...chunk)
+        .all<{ user_low: string; user_high: string }>();
+      for (const e of r.results ?? []) {
+        const key = `${e.user_low}|${e.user_high}`;
+        if (!seen.has(key)) { seen.add(key); out.push(e); }
+      }
+    }
+    return out;
+  }
+
   private async connect(a: string, b: string): Promise<void> {
     const [low, high] = a < b ? [a, b] : [b, a];
     const ts = nowIso();
@@ -346,11 +373,7 @@ export class GraphRepo {
     for (const r of rows) if (myFriends.has(r.id)) r.isFriend = true;
 
     const ids = rows.map((r) => r.id);
-    const ph = ids.map(() => "?").join(",");
-    const edges = await this.db
-      .prepare(`SELECT user_low, user_high FROM friendships WHERE status = 'accepted' AND (user_low IN (${ph}) OR user_high IN (${ph}))`)
-      .bind(...ids, ...ids)
-      .all<Row>();
+    const edges = { results: await this.edgesTouching(ids) };
     for (const e of edges.results ?? []) {
       const candId = byId.has(e.user_low) ? e.user_low : byId.has(e.user_high) ? e.user_high : null;
       const friend = candId === e.user_low ? e.user_high : e.user_low;
@@ -391,11 +414,7 @@ export class GraphRepo {
       ((await this.db.prepare(`SELECT CASE WHEN user_low = ? THEN user_high ELSE user_low END AS f FROM friendships WHERE (user_low = ? OR user_high = ?) AND status = 'accepted'`).bind(userId, userId, userId).all<{ f: string }>()).results ?? []).map((x) => x.f),
     );
     const ids = rows.map((r) => r.id);
-    const ph = ids.map(() => "?").join(",");
-    const edges = await this.db
-      .prepare(`SELECT user_low, user_high FROM friendships WHERE status = 'accepted' AND (user_low IN (${ph}) OR user_high IN (${ph}))`)
-      .bind(...ids, ...ids)
-      .all<Row>();
+    const edges = { results: await this.edgesTouching(ids) };
     const byId = new Map(rows.map((r) => [r.id, r]));
     for (const e of edges.results ?? []) {
       const [a, b] = [e.user_low, e.user_high];
@@ -416,10 +435,14 @@ export class GraphRepo {
     const uniq = [...new Set([userId, ...(fr.results ?? []).map((r) => r.id)])];
     const ph = uniq.map(() => "?").join(",");
     const nodesRes = await this.db.prepare(`SELECT id, display_name AS name, handle FROM users WHERE id IN (${ph})`).bind(...uniq).all<Row>();
-    const edgesRes = await this.db
-      .prepare(`SELECT user_low AS a, user_high AS b FROM friendships WHERE status='accepted' AND user_low IN (${ph}) AND user_high IN (${ph})`)
-      .bind(...uniq, ...uniq)
-      .all<Row>();
+    // Both sides must be inside the ego-net, so filter the chunked result rather
+    // than binding `uniq` twice in one statement (see edgesTouching).
+    const inNet = new Set(uniq);
+    const edgesRes = {
+      results: (await this.edgesTouching(uniq))
+        .filter((e) => inNet.has(e.user_low) && inNet.has(e.user_high))
+        .map((e) => ({ a: e.user_low, b: e.user_high })),
+    };
     return {
       nodes: (nodesRes.results ?? []).map((n) => ({ id: n.id, name: n.name, handle: n.handle, me: n.id === userId })),
       edges: edgesRes.results ?? [],

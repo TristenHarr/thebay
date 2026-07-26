@@ -21,6 +21,26 @@ const TOPIC_SIGNALS: Record<string, RegExp> = {
   software: /\b(software|compiler|database|kernel|runtime|api\b|framework|typescript|rust\b|python|golang|distributed|latency|open.?source|protocol|llm|machine learning|\bai\b|developer|engineer|hackathon|devops|infrastructure|security)/i,
 };
 
+/**
+ * Paid training courses advertised as events.
+ *
+ * Course vendors bulk-list "Generative AI for Business Leaders 1 Day Training in
+ * ‹City›, CA" across every Bay town. They pass a topic filter easily — they're
+ * full of "AI", "enterprise", "data engineering" — but they are advertising, not
+ * news, and eight in a row was the real front page. They differ enough in wording
+ * that title-similarity doesn't catch them; the giveaway is the shared
+ * "<n> Day(s) <Training|Workshop|Masterclass|Bootcamp>" boilerplate.
+ *
+ * Deliberately narrow: a genuine "2-day hardware workshop" meetup is rare, and
+ * missing one is much cheaper than burying the front page under course ads.
+ */
+const COMMERCIAL_TRAINING =
+  /\b\d+\s*[-–]?\s*days?\b[^.]{0,40}\b(training|workshop|masterclass|bootcamp|certification|course)\b|\b(training|workshop|masterclass|bootcamp|certification)\b[^.]{0,20}\b\d+\s*[-–]?\s*days?\b/i;
+
+export function looksLikeCommercialTraining(title: string): boolean {
+  return COMMERCIAL_TRAINING.test(String(title ?? ""));
+}
+
 /** Rule-based topics — always available, and the fallback when the model isn't. */
 export function deriveTopics(text: string): string[] {
   const hay = String(text ?? "");

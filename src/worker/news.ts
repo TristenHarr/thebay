@@ -32,8 +32,8 @@ import { html, raw, toHtml } from "../news/render/escape";
 import { page } from "../news/render/layout";
 import { storyList, filterBar, itemPath } from "../news/render/story";
 import { itemPage } from "../news/render/item";
-import { excerpt } from "../news/render/text";
-import { rfc822 } from "../news/render/time";
+import { excerpt, formatBody } from "../news/render/text";
+import { rfc822, timeAgo } from "../news/render/time";
 import {
   discussionJsonLd, itemListJsonLd, siteJsonLd, breadcrumbJsonLd, clampDescription, SITE_NAME,
 } from "../news/render/head";
@@ -422,6 +422,65 @@ app.get("/login", optionalAuth, async (c) => {
   </a>
 </p>`;
   return htmlResponse(page({ title: "Sign in", canonical: newsOrigin(c.env) + "/login", noindex: true }, chrome, body));
+});
+
+// ── profiles ─────────────────────────────────────────────────────────────────
+// Every story byline and every comment links here, so this route existing is not
+// optional — without it the site is full of 404s that only show up when clicked.
+app.get("/u/:handle", optionalAuth, async (c) => {
+  const handle = c.req.param("handle");
+  const r = repo(c);
+  const user = await r.userByHandle(handle);
+  const chrome = await chromeFor(c);
+  if (!user) return notFound(c);
+
+  const [stories, comments, stats] = await Promise.all([
+    r.storiesByAuthor(user.id),
+    r.commentsByAuthor(user.id),
+    r.authorStats(user.id),
+  ]);
+  const nowMs = Date.now();
+
+  const body = html`<h1 class="item-title serif" style="margin-top:22px">${user.displayName}</h1>
+<div class="story-meta mono" style="margin-bottom:18px">
+  <span>@${user.handle}</span><span class="dot">·</span>
+  <span>${stats.stories} submission${stats.stories === 1 ? "" : "s"}</span><span class="dot">·</span>
+  <span>${stats.comments} comment${stats.comments === 1 ? "" : "s"}</span><span class="dot">·</span>
+  <span>${stats.points} point${stats.points === 1 ? "" : "s"}</span><span class="dot">·</span>
+  <a href="${chrome.eventsOrigin}/app/u/${user.handle}">profile on thebay.events →</a>
+</div>
+
+<h2 class="comments-head mono">Submissions</h2>
+${stories.length
+      ? storyList(stories, { nowMs, signedIn: !!c.get("user") })
+      : html`<p style="color:var(--muted);padding:14px 0">Nothing submitted yet.</p>`}
+
+<h2 class="comments-head mono" style="margin-top:32px">Comments</h2>
+${comments.length
+      ? comments.map(
+        (cm) => html`<div class="comment">
+            <div class="comment-meta mono">
+              <a href="${itemPath({ id: cm.storyId, slug: cm.storySlug })}">${cm.storyTitle}</a>
+              <span class="dot">·</span>
+              <time datetime="${cm.createdAt}">${timeAgo(cm.createdAt, nowMs)}</time>
+            </div>
+            <div class="comment-body">${formatBody(cm.body)}</div>
+          </div>`,
+      )
+      : html`<p style="color:var(--muted);padding:14px 0">No comments yet.</p>`}`;
+
+  return htmlResponse(
+    page(
+      {
+        title: `${user.displayName} (@${user.handle})`,
+        description: `${user.displayName} on thebay.news — ${stats.stories} submissions, ${stats.comments} comments.`,
+        canonical: `${newsOrigin(c.env)}/u/${user.handle}`,
+        ogType: "website",
+      },
+      chrome,
+      body,
+    ),
+  );
 });
 
 app.get("/about", optionalAuth, async (c) => {

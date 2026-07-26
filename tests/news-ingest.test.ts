@@ -234,6 +234,33 @@ describe("syncEventStories", () => {
     expect(stories[0]!.topics).toEqual(expect.arrayContaining(["hardware", "vc"]));
   });
 
+  it("drops paid course listings entirely — they are ads, not news", async () => {
+    // Course vendors carpet-bomb Eventbrite with a template per Bay city. Eight
+    // of these in a row was the actual live front page.
+    const cities = ["Menlo Park", "San Ramon", "Pleasanton", "Redwood City", "Berkeley", "San Mateo"];
+    for (const [i, city] of cities.entries()) {
+      await addEvent(`t${i}`, `Enterprise AI Strategy Mastery 1 Day Training in ${city}, CA`, 100, "[]");
+    }
+    await addEvent("real", "Hardware Founders Night: MEMS and photonics", 100, "[]");
+
+    await repo.syncEventStories(25, "2026-07-25T00:00:00.000Z");
+    const titles = (await repo.feed({ src: "event", sort: "new", limit: 25, offset: 0 })).stories.map((s) => s.title);
+
+    expect(titles.filter((t) => /1 Day Training/.test(t))).toHaveLength(0);
+    expect(titles).toContain("Hardware Founders Night: MEMS and photonics");
+  });
+
+  it("posts ONE entry when the same real event is listed in several cities", async () => {
+    // Same rule, applied to something that ISN'T a course ad — dedup must work
+    // on its own, not only as a side effect of the training filter.
+    for (const [i, city] of ["Oakland", "Berkeley", "San Jose"].entries()) {
+      await addEvent(`m${i}`, `Robotics Grasping Research Seminar in ${city}, CA`, 100, "[]");
+    }
+    await repo.syncEventStories(25, "2026-07-25T00:00:00.000Z");
+    const titles = (await repo.feed({ src: "event", sort: "new", limit: 25, offset: 0 })).stories.map((s) => s.title);
+    expect(titles.filter((t) => /Robotics Grasping Research Seminar/.test(t))).toHaveLength(1);
+  });
+
   it("is idempotent — a second run creates nothing new", async () => {
     await addEvent("e1", "Robotics startup demo day", 100, "[]");
     expect(await repo.syncEventStories(25, "2026-07-25T00:00:00.000Z")).toBe(1);
@@ -241,7 +268,19 @@ describe("syncEventStories", () => {
   });
 
   it("respects the limit so events can't flood the front page", async () => {
-    for (let i = 0; i < 8; i++) await addEvent(`e${i}`, `AI infrastructure meetup ${i}`, 100, "[]");
+    // Genuinely distinct events — "meetup 1/2/3" would (correctly) collapse as
+    // near-duplicates now, which would test dedup rather than the limit.
+    const distinct = [
+      "Robotics grasping seminar at Berkeley",
+      "Seed-stage venture office hours",
+      "Compiler internals reading group",
+      "MEMS fabrication teardown night",
+      "Distributed databases paper club",
+      "Hardware prototyping open lab",
+      "Founder pitch practice session",
+      "Cryptography proofs study group",
+    ];
+    for (const [i, t] of distinct.entries()) await addEvent(`e${i}`, t, 100, "[]");
     expect(await repo.syncEventStories(3, "2026-07-25T00:00:00.000Z")).toBe(3);
   });
 });
