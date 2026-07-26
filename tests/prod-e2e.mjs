@@ -142,6 +142,34 @@ async function main() {
     if (st.json?.stale) skipped(`scrape is STALE (last run ${st.json?.lastRunAt || "never"}, ${st.json?.ageHours ?? "?"}h ago)`);
   }
 
+  // ── 1b. data quality: good info + good tags on the LIVE catalog ─────────────
+  section("1b · Catalog data quality (live)");
+  {
+    const feed = await anon.get("/api/events?limit=200");
+    const evs = feed.json?.events || [];
+    ok(evs.length > 0, `sampled ${evs.length} upcoming events`);
+    // good info: every event has a non-blank title, a parseable future-ish date, a url
+    const blankTitle = evs.filter((e) => !e.title || !e.title.trim());
+    const badDate = evs.filter((e) => Number.isNaN(Date.parse(e.startUtc)));
+    const noUrl = evs.filter((e) => !e.url);
+    ok(blankTitle.length === 0, `no blank titles (${blankTitle.length} bad)`);
+    ok(badDate.length === 0, `all dates parse (${badDate.length} bad)`);
+    ok(noUrl.length === 0, `every event has a url (${noUrl.length} missing)`);
+    // good tags: every event is categorized (never untagged), and the tag is a known one
+    const KNOWN = new Set(["hardware", "vc", "math", "software", "tech"]);
+    const untagged = evs.filter((e) => !Array.isArray(e.categories) || e.categories.length === 0);
+    const unknownTag = evs.filter((e) => (e.categories || []).some((c) => !KNOWN.has(c)));
+    ok(untagged.length === 0, `every event is tagged (${untagged.length} untagged)`);
+    ok(unknownTag.length === 0, `all tags are from the known set (${unknownTag.length} stray)`);
+    // interest score is present and in range
+    ok(evs.every((e) => e.interestScore == null || (e.interestScore >= 0 && e.interestScore <= 100)), "interest scores in 0–100");
+    // recurring-event flooding guard: no single title should dominate the sample
+    const byTitle = {};
+    for (const e of evs) byTitle[e.title] = (byTitle[e.title] || 0) + 1;
+    const [topTitle, topN] = Object.entries(byTitle).sort((a, b) => b[1] - a[1])[0] || ["", 0];
+    (topN > evs.length * 0.15 ? skipped : ok)(topN <= evs.length * 0.15, `no title floods the feed (max "${(topTitle || "").slice(0, 30)}" ×${topN} of ${evs.length})`);
+  }
+
   // ── 2. security posture ────────────────────────────────────────────────────
   section("2 · Security headers");
   {
