@@ -803,23 +803,76 @@ ${items}
 </rss>`);
 });
 
+/**
+ * URLs per sitemap file. The protocol allows 50,000, but smaller files are
+ * cheaper to regenerate on every crawl and keep each D1 read small.
+ */
+const SITEMAP_PAGE = 1000;
+
+const sitemapXml = (body: string, wrapper: "urlset" | "sitemapindex") =>
+  `<?xml version="1.0" encoding="UTF-8"?>
+<${wrapper} xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${body}
+</${wrapper}>`;
+
+/**
+ * A sitemap INDEX, not a single file.
+ *
+ * The old one listed the 2,000 most recent stories. The catalog passed 4,000,
+ * so half of it was simply not discoverable this way — and the cap would have
+ * kept silently hiding more of the site every day it grew. An index scales to
+ * the 50,000-file limit without anyone having to notice again.
+ */
 app.get("/sitemap.xml", async (c) => {
   const origin = newsOrigin(c.env);
-  const stories = await repo(c).recent(2000);
-  const urls = [
-    `  <url><loc>${origin}/</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>`,
-    `  <url><loc>${origin}/newest</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>`,
-    `  <url><loc>${origin}/about</loc><changefreq>monthly</changefreq><priority>0.3</priority></url>`,
-    ...stories.map(
-      (s) => `  <url><loc>${xml(origin + itemPath(s))}</loc><lastmod>${xml(s.createdAt.slice(0, 10))}</lastmod></url>`,
+  const total = await repo(c).countLive();
+  const pages = Math.max(1, Math.ceil(total / SITEMAP_PAGE));
+  const today = new Date().toISOString().slice(0, 10);
+  const entries = [
+    `  <sitemap><loc>${origin}/sitemap-pages.xml</loc><lastmod>${today}</lastmod></sitemap>`,
+    ...Array.from(
+      { length: pages },
+      (_, i) => `  <sitemap><loc>${origin}/sitemap/${i + 1}.xml</loc><lastmod>${today}</lastmod></sitemap>`,
     ),
   ].join("\n");
   c.header("content-type", "application/xml; charset=utf-8");
   c.header("cache-control", "public, max-age=3600");
-  return c.body(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls}
-</urlset>`);
+  return c.body(sitemapXml(entries, "sitemapindex"));
+});
+
+app.get("/sitemap-pages.xml", (c) => {
+  const origin = newsOrigin(c.env);
+  const urls = [
+    `  <url><loc>${origin}/</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>`,
+    `  <url><loc>${origin}/newest</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>`,
+    `  <url><loc>${origin}/about</loc><changefreq>monthly</changefreq><priority>0.3</priority></url>`,
+  ].join("\n");
+  c.header("content-type", "application/xml; charset=utf-8");
+  c.header("cache-control", "public, max-age=3600");
+  return c.body(sitemapXml(urls, "urlset"));
+});
+
+// `/sitemap/1.xml`, not `/sitemap-1.xml`: the page number is its own path
+// segment. Hono matches params per segment, so neither `:page{[0-9]+}.xml` nor
+// `/sitemap-*` matched a literal suffix inside one — both fell through to the
+// 404 page, which a crawler would have read as "this file does not exist".
+app.get("/sitemap/:file", async (c) => {
+  const m = /^([0-9]+)\.xml$/.exec(c.req.param("file") ?? "");
+  if (!m) return c.notFound();
+  const page = Number(m[1]);
+  const origin = newsOrigin(c.env);
+  const total = await repo(c).countLive();
+  const pages = Math.max(1, Math.ceil(total / SITEMAP_PAGE));
+  // A crawler that kept a stale index shouldn't get a soft-200 empty file.
+  if (!Number.isInteger(page) || page < 1 || page > pages) return c.notFound();
+
+  const slice = await repo(c).sitemapSlice(SITEMAP_PAGE, (page - 1) * SITEMAP_PAGE);
+  const urls = slice
+    .map((s) => `  <url><loc>${xml(origin + itemPath(s))}</loc><lastmod>${xml(s.createdAt.slice(0, 10))}</lastmod></url>`)
+    .join("\n");
+  c.header("content-type", "application/xml; charset=utf-8");
+  c.header("cache-control", "public, max-age=3600");
+  return c.body(sitemapXml(urls, "urlset"));
 });
 
 app.get("/robots.txt", (c) => {

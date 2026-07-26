@@ -48,6 +48,20 @@ const PAGES = [
   { name: "about", path: "/about" },
 ];
 
+/**
+ * The story page is where search and social traffic actually lands, and nothing
+ * had ever looked at it. Resolved at runtime because the front page changes
+ * hourly — hardcoding an id would rot within a day and start "failing" for a
+ * reason that has nothing to do with the site.
+ */
+async function discoverPages() {
+  const res = await fetch(`${BASE}/api/news/feed?src=bay&limit=1`);
+  if (!res.ok) return [];
+  const s = (await res.json()).stories?.[0];
+  if (!s) return [];
+  return [{ name: "item", path: s.slug ? `/item/${s.id}/${s.slug}` : `/item/${s.id}` }];
+}
+
 let failures = 0;
 const shots = [];
 const ok = (m) => console.log(`  \x1b[32m✓\x1b[0m ${m}`);
@@ -207,7 +221,7 @@ const browser = await chromium.launch();
 mkdirSync(OUT, { recursive: true });
 console.log(`\nVisual checks — ${BASE}\n`);
 try {
-  for (const page of PAGES) {
+  for (const page of [...PAGES, ...(await discoverPages())]) {
     for (const viewport of VIEWPORTS) {
       for (const theme of THEMES) {
         await checkPage(browser, page, viewport, theme);

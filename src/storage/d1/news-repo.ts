@@ -958,4 +958,29 @@ export class NewsRepo {
       .all<Row>();
     return (r.results ?? []).map(rowToStory);
   }
+
+  /** How many stories a crawler should be able to reach. */
+  async countLive(): Promise<number> {
+    const r = await this.db.prepare("SELECT COUNT(*) AS n FROM stories WHERE dead = 0").first<{ n: number }>();
+    return r?.n ?? 0;
+  }
+
+  /**
+   * A slice of the catalog for one sitemap file.
+   *
+   * OLDEST first, deliberately. Newest-first would reshuffle every URL between
+   * files each time a story lands — page 1 would be entirely different tomorrow,
+   * so a crawler must re-read every file to find what changed. Oldest-first
+   * makes each page immutable once full: only the last one ever changes.
+   */
+  async sitemapSlice(limit: number, offset: number): Promise<{ id: string; slug: string | null; createdAt: string }[]> {
+    const r = await this.db
+      .prepare(
+        `SELECT id, slug, created_at FROM stories WHERE dead = 0
+          ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?`,
+      )
+      .bind(limit, offset)
+      .all<Row>();
+    return (r.results ?? []).map((x: any) => ({ id: x.id, slug: x.slug ?? null, createdAt: x.created_at }));
+  }
 }

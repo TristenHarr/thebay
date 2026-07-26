@@ -111,9 +111,13 @@ describe("thebay.news worker", () => {
     expect(robots.status).toBe(200);
     expect(await robots.text()).toContain("Sitemap: https://thebay.news/sitemap.xml");
 
+    // /sitemap.xml is an INDEX now — story URLs live one hop down.
     const sitemap = await get("/sitemap.xml");
     expect(sitemap.headers.get("content-type")).toContain("application/xml");
-    expect(await sitemap.text()).toContain("https://thebay.news/item/");
+    const indexXml = await sitemap.text();
+    expect(indexXml).toContain("<sitemapindex");
+    expect(indexXml).toContain("https://thebay.news/sitemap/1.xml");
+    expect(await (await get("/sitemap/1.xml")).text()).toContain("https://thebay.news/item/");
 
     const feed = await get("/feed.xml");
     expect(feed.headers.get("content-type")).toContain("application/rss+xml");
@@ -346,5 +350,74 @@ describe("thebay.news worker", () => {
     const all = await (await get("/?src=all")).text();
     expect(all).toContain("Something from HN");
     expect(all).toContain("Fabricating a MEMS resonator");
+  });
+});
+
+describe("sitemap covers the WHOLE catalog", () => {
+  let env: any, repo: NewsRepo;
+  const get = (path: string) => newsWorker.fetch(new Request("https://thebay.news" + path), env, {} as any);
+  beforeEach(() => {
+    ({ env } = makeTestEnv({ NEWS_ORIGIN: "https://thebay.news", PUBLIC_ORIGIN: "https://thebay.events" }));
+    repo = new NewsRepo(env.DB);
+  });
+
+  /**
+   * The old sitemap listed the 2,000 newest stories. Production passed 4,000, so
+   * half the site was undiscoverable — and the cap would have hidden a larger
+   * share every day the catalog grew, silently, forever.
+   */
+  it("indexes enough files to reach every story", async () => {
+    // 2,400 stories = 3 pages at 1,000 per file.
+    const rows = Array.from({ length: 2400 }, (_, i) => ({
+      origin: "rss" as const, externalId: `s${i}`, title: `Story ${i}`,
+      url: `https://ex.com/${i}`, externalUrl: null, points: null, comments: null,
+      createdAt: new Date(Date.parse("2026-01-01T00:00:00Z") + i * 60_000).toISOString(),
+      author: null, topics: [],
+    }));
+    await repo.upsertIngested(rows as any);
+
+    const index = await get("/sitemap.xml");
+    expect(index.status).toBe(200);
+    const xml = await index.text();
+    expect(xml).toContain("<sitemapindex");
+    const files = (xml.match(/<sitemap>/g) ?? []).length;
+    expect(files).toBe(1 + 3); // pages + 3 story files
+
+    // Every story URL must appear across the files — that is the whole point.
+    const seen = new Set<string>();
+    for (let p = 1; p <= 3; p++) {
+      const res = await get(`/sitemap/${p}.xml`);
+      expect(res.status).toBe(200);
+      for (const m of (await res.text()).matchAll(/<loc>([^<]+)<\/loc>/g)) seen.add(m[1]!);
+    }
+    expect(seen.size).toBe(2400);
+  });
+
+  it("orders oldest-first so full pages never change again", async () => {
+    const mk = (i: number, when: string) => ({
+      origin: "rss" as const, externalId: `x${i}`, title: `T${i}`, url: `https://ex.com/x${i}`,
+      externalUrl: null, points: null, comments: null, createdAt: when, author: null, topics: [],
+    });
+    await repo.upsertIngested([mk(1, "2026-01-01T00:00:00.000Z"), mk(2, "2026-02-01T00:00:00.000Z")] as any);
+    const before = await (await get("/sitemap/1.xml")).text();
+
+    // A newer story arrives. Newest-first would push everything down a slot.
+    await repo.upsertIngested([mk(3, "2026-03-01T00:00:00.000Z")] as any);
+    const after = await (await get("/sitemap/1.xml")).text();
+
+    const locs = (s: string) => [...s.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    expect(locs(after).slice(0, 2)).toEqual(locs(before)); // existing entries did not move
+  });
+
+  it("404s a page number the index never offered", async () => {
+    expect((await get("/sitemap/99.xml")).status).toBe(404);
+  });
+
+  it("still serves the static pages file, and robots still points at the index", async () => {
+    const pages = await get("/sitemap-pages.xml");
+    expect(pages.status).toBe(200);
+    const body = await pages.text();
+    for (const p of ["/", "/newest", "/about"]) expect(body).toContain(`<loc>https://thebay.news${p}</loc>`);
+    expect(await (await get("/robots.txt")).text()).toContain("/sitemap.xml");
   });
 });
