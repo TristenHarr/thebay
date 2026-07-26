@@ -10,7 +10,7 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 export const api = createApi({
   reducerPath: "api",
   baseQuery: fetchBaseQuery({ baseUrl: "/", credentials: "same-origin" }),
-  tagTypes: ["Me", "Events", "Event", "Goals", "Friends", "Groups", "Group", "Rankings", "Intros", "Mentors", "Match", "Media", "Communities", "Obligations", "Integrations", "Achievements", "Agent", "Reviews", "Notes"],
+  tagTypes: ["Me", "Events", "Event", "Goals", "Friends", "Groups", "Group", "Rankings", "Intros", "Mentors", "Match", "Media", "Communities", "Obligations", "Integrations", "Achievements", "Agent", "Reviews", "Notes", "Shadows", "MyShadow"],
   endpoints: (b) => ({
     // auth + profile
     getMe: b.query<{ user: any | null; points?: number }, void>({ query: () => "api/me", providesTags: ["Me"] }),
@@ -77,9 +77,21 @@ export const api = createApi({
     getAchievements: b.query<{ achievements: any[]; streaks: any[]; points: any[] }, void>({ query: () => "api/me/achievements", providesTags: ["Achievements"] }),
     getPublicAchievements: b.query<{ achievements: any[]; streaks: any[] }, string>({ query: (handle) => `api/u/${handle}/achievements` }),
     getNetworkGraph: b.query<{ nodes: any[]; edges: any[] }, void>({ query: () => "api/network/graph", providesTags: ["Friends"] }),
-    // map bulletin board
+    // map bulletin board (legacy — superseded by shadows)
     getNotes: b.query<{ notes: any[] }, void>({ query: () => "api/notes", providesTags: ["Notes"] }),
     postNote: b.mutation<{ ok: boolean; id: string }, { lat: number; lng: number; body: string }>({ query: (body) => ({ url: "api/notes", method: "POST", body }), invalidatesTags: ["Notes"] }),
+
+    // shadows — the live, ephemeral, location-sharded board
+    getShadows: b.query<{ shadows: any[] }, string>({ query: (cells) => `api/shadows?cells=${cells}`, providesTags: ["Shadows"] }),
+    getHeat: b.query<{ precision: number; cells: { cell: string; count: number }[] }, number | void>({ query: (p) => `api/shadows/heat${p ? `?precision=${p}` : ""}`, providesTags: ["Shadows"] }),
+    getMyShadow: b.query<{ active: { id: string; cell: string } | null }, void>({ query: () => "api/shadows/mine", providesTags: ["MyShadow"] }),
+    postShadow: b.mutation<{ ok: boolean; id: string; cell: string; expiresAt: string; replaced: any }, { lat: number; lng: number; kind: string; body?: string; mediaKey?: string; streamId?: string; connectionUserId?: string }>({
+      query: (body) => ({ url: "api/shadows", method: "POST", body }),
+      invalidatesTags: ["Shadows", "MyShadow"],
+    }),
+    reactShadow: b.mutation<{ ok: boolean }, { id: string; emoji: string; on?: boolean }>({ query: ({ id, ...body }) => ({ url: `api/shadows/${id}/react`, method: "POST", body }), invalidatesTags: ["Shadows"] }),
+    reportShadow: b.mutation<{ ok: boolean }, string>({ query: (id) => ({ url: `api/shadows/${id}/report`, method: "POST" }), invalidatesTags: ["Shadows"] }),
+    deleteShadow: b.mutation<{ ok: boolean; deleted: boolean }, string>({ query: (id) => ({ url: `api/shadows/${id}`, method: "DELETE" }), invalidatesTags: ["Shadows", "MyShadow"] }),
     getCommunities: b.query<{ communities: any[] }, void>({ query: () => "api/communities", providesTags: ["Communities"] }),
     createCommunity: b.mutation<any, { name: string; kind?: string }>({ query: (body) => ({ url: "api/communities", method: "POST", body }), invalidatesTags: ["Communities"] }),
     getCommunity: b.query<{ community: any; members: any[]; metric: string; rankings: any[] }, { id: string; metric?: string }>({ query: ({ id, metric }) => `api/communities/${id}${metric ? `?metric=${metric}` : ""}`, providesTags: (_r, _e, a) => [{ type: "Communities", id: a.id }] }),
@@ -116,6 +128,7 @@ export const {
   useGetCommunitiesQuery, useCreateCommunityMutation, useGetCommunityQuery, useJoinCommunityMutation, useGetMediaQuery, useGetIntegrationsQuery, useGetSuggestionsQuery, useSubscribeCalendarMutation,
   useGetNetworkGraphQuery, useGetAchievementsQuery, useGetPublicAchievementsQuery, useGetPublicGoalsQuery,
   useGetNotesQuery, usePostNoteMutation,
+  useGetShadowsQuery, useGetHeatQuery, useGetMyShadowQuery, usePostShadowMutation, useReactShadowMutation, useReportShadowMutation, useDeleteShadowMutation,
   useIssueCheckinTokenMutation, useCheckInMutation, useGetCheckinsQuery,
   useGetEventMediaQuery, useGetAgendaQuery, useAttachMediaMutation,
   useGetImportedQuery, useConnectIntegrationMutation, useImportIntegrationMutation,

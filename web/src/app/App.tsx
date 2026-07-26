@@ -33,6 +33,9 @@ import { Agent } from "../features/agent/Agent";
 // MapView pulls in MapLibre (~800kB) — lazy-load it so it never touches the main bundle.
 const MapView = lazy(() => import("../features/map/MapView").then((m) => ({ default: m.MapView })));
 const Board = lazy(() => import("../features/board/Board").then((m) => ({ default: m.Board })));
+// The live board floats over every page (never menu-hidden). Lazy so MapLibre only
+// loads when someone actually opens it.
+const FloatingBoard = lazy(() => import("../features/board/FloatingBoard").then((m) => ({ default: m.FloatingBoard })));
 
 const PRIMARY: [string, string][] = [
   ["/", "Home"],
@@ -167,6 +170,11 @@ export function App() {
           </NavLink>
         ))}
       </nav>
+
+      {/* The live, ephemeral board — floats over the whole app, pinnable + draggable. */}
+      <Suspense fallback={null}>
+        <FloatingBoard me={me} />
+      </Suspense>
     </div>
   );
 }

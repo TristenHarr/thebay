@@ -125,6 +125,100 @@ p { text-wrap: pretty; }
   transition: transform 0.12s ease;
 }
 .note-pin:hover { transform: rotate(-8deg) scale(1.4); z-index: 2; }
+
+/* ── Shadows: the floating live board (a pirate's chart of the Bay) ──────────── */
+.shadows-bubble {
+  position: fixed; right: 20px; bottom: 20px; z-index: 40;
+  width: 52px; height: 52px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--gold) 85%, white), var(--gold));
+  border: 2px solid color-mix(in srgb, var(--gold) 60%, var(--bg));
+  box-shadow: 0 6px 20px -6px color-mix(in srgb, var(--gold) 70%, transparent), var(--shadow-md);
+  transition: transform 0.15s ease;
+}
+.shadows-bubble:hover { transform: scale(1.08) rotate(-4deg); }
+.shadows-bubble-count {
+  position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 10px; background: var(--crit); color: #fff; font: 700 11px/20px ui-monospace, monospace;
+  text-align: center; border: 2px solid var(--bg);
+}
+
+.shadows-panel {
+  position: fixed; z-index: 40; display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 14px; background: var(--elev);
+  border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 16%, transparent), 0 18px 50px -16px rgb(0 0 0 / 0.6);
+  max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
+}
+.shadows-head {
+  display: flex; align-items: center; gap: 4px; padding: 7px 8px 7px 12px; cursor: grab; touch-action: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gold) 12%, var(--elev)), var(--elev));
+  border-bottom: 1px solid var(--border);
+}
+.shadows-head:active { cursor: grabbing; }
+.shadows-title { display: flex; align-items: center; gap: 6px; font: 700 13px/1 ui-monospace, monospace; color: var(--text); letter-spacing: 0.02em; }
+.shadows-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 70%, transparent); animation: pulse-dot 1.8s infinite; }
+@keyframes pulse-dot { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.shadows-icon { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; font-size: 13px; color: var(--muted); background: transparent; }
+.shadows-icon:hover { background: var(--surface); color: var(--text); }
+.shadows-resize { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, color-mix(in srgb, var(--gold) 50%, var(--border)) 50%); border-radius: 0 0 12px 0; }
+
+.shadows-body { position: relative; flex: 1; min-height: 0; }
+.shadows-map { position: absolute; inset: 0; }
+.shadows-map .maplibregl-ctrl-attrib { display: none; }
+.shadows-hint {
+  position: absolute; left: 8px; right: 8px; top: 8px; z-index: 5; pointer-events: none;
+  padding: 5px 9px; border-radius: 8px; font: 500 11px/1.3 ui-monospace, monospace; text-align: center;
+  color: var(--text); background: color-mix(in srgb, var(--elev) 88%, transparent); border: 1px solid var(--border); backdrop-filter: blur(4px);
+}
+
+.shadow-pin {
+  width: 26px; height: 26px; display: grid; place-items: center; cursor: pointer; font-size: 14px;
+  border-radius: 50% 50% 50% 2px; transform: rotate(-45deg);
+  background: radial-gradient(circle at 40% 35%, color-mix(in srgb, var(--gold) 80%, white), var(--gold));
+  border: 2px solid var(--bg); box-shadow: 0 3px 10px -3px color-mix(in srgb, var(--gold) 80%, transparent);
+  transition: transform 0.12s ease;
+}
+.shadow-pin > * { transform: rotate(45deg); }
+.shadow-pin { line-height: 1; }
+.shadow-pin:hover { transform: rotate(-45deg) scale(1.25); z-index: 3; }
+.shadow-heat {
+  position: relative; display: grid; place-items: center; cursor: pointer; color: var(--accent-ink);
+  width: calc(20px * var(--s, 1)); height: calc(20px * var(--s, 1)); border-radius: 50%;
+  font: 700 11px/1 ui-monospace, monospace;
+  background: radial-gradient(circle, color-mix(in srgb, var(--gold) 55%, transparent) 0%, transparent 70%);
+  box-shadow: 0 0 calc(8px * var(--s, 1)) color-mix(in srgb, var(--gold) 45%, transparent);
+}
+.shadow-heat::before { content: ""; position: absolute; width: 30%; height: 30%; border-radius: 50%; background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+
+.shadows-detail {
+  position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 6; padding: 10px 12px;
+  border-radius: 12px; background: var(--elev); border: 1px solid color-mix(in srgb, var(--gold) 30%, var(--border)); box-shadow: var(--shadow-md);
+}
+.shadows-detail-x { position: absolute; right: 8px; top: 8px; color: var(--muted); font-size: 12px; }
+.shadows-detail-x:hover { color: var(--text); }
+.shadows-media { width: 100%; max-height: 180px; border-radius: 8px; object-fit: cover; margin-bottom: 6px; border: 0; }
+.shadows-react { padding: 2px 6px; border-radius: 999px; font-size: 13px; background: var(--surface); border: 1px solid var(--border); transition: transform 0.1s ease; }
+.shadows-react:hover:not(:disabled) { transform: scale(1.12); border-color: color-mix(in srgb, var(--gold) 50%, var(--border)); }
+.shadows-react:disabled { opacity: 0.5; }
+.shadows-mini-btn { padding: 2px 8px; border-radius: 7px; font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); }
+.shadows-mini-btn:hover { color: var(--text); border-color: var(--border-strong); }
+
+.shadows-compose-cta { padding: 9px 12px; font-size: 12px; color: var(--muted); background: var(--elev); border-top: 1px solid var(--border); text-align: center; }
+.shadows-cast {
+  width: 100%; padding: 10px; font: 700 13px/1 ui-monospace, monospace; letter-spacing: 0.02em; color: var(--accent-ink);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gold) 92%, white), var(--gold)); border-top: 1px solid color-mix(in srgb, var(--gold) 50%, var(--border));
+}
+.shadows-cast:hover { filter: brightness(1.05); }
+.shadows-composer { display: flex; flex-direction: column; gap: 7px; padding: 9px 10px; background: var(--elev); border-top: 1px solid var(--border); }
+.shadows-kind { width: 30px; height: 30px; border-radius: 8px; font-size: 15px; background: var(--surface); border: 1px solid var(--border); }
+.shadows-kind.is-active { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, var(--surface)); }
+.shadows-text { width: 100%; resize: none; border-radius: 8px; padding: 7px 9px; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); }
+.shadows-text:focus { outline: none; border-color: var(--ring); }
+.shadows-file { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 9px; border-radius: 8px; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px dashed var(--border); }
+.shadows-post { padding: 6px 16px; border-radius: 8px; font: 700 12px/1 ui-monospace, monospace; color: var(--accent-ink); background: var(--gold); }
+.shadows-post:disabled { opacity: 0.45; }
 /* keep the OSM base readable in dark mode without a second tile set */
 :root[data-theme="dark"] .maplibregl-canvas, :root:not([data-theme="light"]) .maplibregl-canvas { filter: brightness(0.82) saturate(0.9); }
 
