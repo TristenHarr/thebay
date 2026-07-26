@@ -548,7 +548,12 @@ export class NewsRepo {
       }
 
       const canonical = canonicalizeUrl(link);
-      const hash = canonical ? urlHash(canonical) : null;
+      // A link we can't canonicalize can't be deduped and would violate the
+      // stories CHECK (kind='link' requires a url). Skip the ITEM rather than
+      // let one malformed URL abort the whole harvest — which is exactly what
+      // happened when a feed emitted relative links.
+      if (!canonical) continue;
+      const hash = urlHash(canonical);
       let storyId: string | null = null;
 
       if (hash) {

@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { parseHn } from "../src/news/ingest/hn";
 import { parseLobsters } from "../src/news/ingest/lobsters";
-import { parseFeed, decodeXml, fetchFeeds, MAX_ITEMS_PER_FEED } from "../src/news/ingest/rss";
+import { parseFeed, decodeXml, fetchFeeds, MAX_ITEMS_PER_FEED, FEED_CONCURRENCY } from "../src/news/ingest/rss";
 import { deriveTopics, fallbackSummary, summarizeStory } from "../src/news/summarize";
 import { parsePreview, harvestPreview } from "../src/news/ingest/preview";
 import { parseGithub, searchUrl } from "../src/news/ingest/github";
@@ -553,5 +553,98 @@ describe("per-feed volume cap", () => {
     const fake = (async () => new Response(many(4), { status: 200 })) as unknown as typeof fetch;
     const { stories } = await fetchFeeds([{ id: "f", url: "https://x/1" }], fake);
     expect(stories).toHaveLength(4);
+  });
+});
+
+describe("feed fetching at scale", () => {
+  const FEED = (n: number) =>
+    `<rss><channel>${Array.from({ length: n }, (_, i) =>
+      `<item><title>Item number ${i}</title><link>https://ex.com/${i}</link><guid>g${i}</guid></item>`).join("")}</channel></rss>`;
+
+  it("fetches concurrently rather than one feed at a time", async () => {
+    // 86 feeds sequentially is ~45s of a cron tick spent waiting on sockets.
+    let inFlight = 0, peak = 0;
+    const fake = (async () => {
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      return new Response(FEED(2), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const feeds = Array.from({ length: 30 }, (_, i) => ({ id: `f${i}`, url: `https://x/${i}` }));
+    await fetchFeeds(feeds, fake);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(FEED_CONCURRENCY); // bounded: still a polite client
+  });
+
+  it("still isolates failures when running concurrently", async () => {
+    const fake = (async (url: any) =>
+      String(url).includes("bad") ? new Response("", { status: 500 }) : new Response(FEED(2), { status: 200 })) as unknown as typeof fetch;
+    const feeds = [
+      ...Array.from({ length: 10 }, (_, i) => ({ id: `ok${i}`, url: `https://x/ok${i}` })),
+      { id: "bad1", url: "https://x/bad1" }, { id: "bad2", url: "https://x/bad2" },
+    ];
+    const { stories, failed } = await fetchFeeds(feeds, fake);
+    expect(failed.sort()).toEqual(["bad1", "bad2"]);
+    expect(stories).toHaveLength(20);
+  });
+
+  it("every configured feed has an id, a url and a topics array", async () => {
+    const feeds = (await import("../config/news-feeds.json")).default as any[];
+    expect(feeds.length).toBeGreaterThan(50);
+    const ids = new Set<string>();
+    for (const f of feeds) {
+      expect(f.id, JSON.stringify(f)).toBeTruthy();
+      expect(f.url).toMatch(/^https?:\/\//);
+      expect(Array.isArray(f.topics), f.id).toBe(true);
+      expect(ids.has(f.id), `duplicate feed id: ${f.id}`).toBe(false);
+      ids.add(f.id);
+    }
+  });
+
+  it("covers every interest axis", async () => {
+    const feeds = (await import("../config/news-feeds.json")).default as any[];
+    for (const axis of ["hardware", "vc", "math", "software"]) {
+      expect(feeds.some((f) => f.topics.includes(axis)), `no feeds for ${axis}`).toBe(true);
+    }
+  });
+});
+
+describe("malformed feed links can't sink a run", () => {
+  const RELATIVE = `<rss><channel>
+    <item><title>A relative link story</title><link>/blog/thing/</link><guid>g1</guid></item>
+    <item><title>An absolute one</title><link>https://other.com/x</link><guid>g2</guid></item>
+  </channel></rss>`;
+
+  it("resolves relative links against the feed's own URL", () => {
+    // Stanford's AI blog really does emit "/blog/linkbert/".
+    const out = parseFeed(RELATIVE, "stan", "https://ai.stanford.edu/blog/feed.xml");
+    expect(out[0]!.url).toBe("https://ai.stanford.edu/blog/thing/");
+    expect(out[1]!.url).toBe("https://other.com/x");
+  });
+
+  it("drops a relative link when there's no base to resolve against", () => {
+    expect(parseFeed(RELATIVE, "x").map((s) => s.url)).toEqual(["https://other.com/x"]);
+  });
+
+  it("skips an unusable link instead of aborting the whole harvest", async () => {
+    // Inserting kind='link' with a null url violates the stories CHECK, which
+    // 500'd the entire ingest run — one bad URL out of ~1000 killed everything.
+    const { d1 } = makeTestDb();
+    const repo = new NewsRepo(d1);
+    const item = (over: any) => ({
+      origin: "rss" as const, externalId: "x", title: "A story", url: "https://ex.com/ok",
+      externalUrl: null, points: null, comments: null,
+      createdAt: "2026-07-25T10:00:00.000Z", author: null, topics: [], ...over,
+    });
+
+    const res = await repo.upsertIngested([
+      item({ externalId: "a", url: "/relative/path" }),      // unusable
+      item({ externalId: "b", url: "javascript:alert(1)" }), // unusable
+      item({ externalId: "c", url: "https://ex.com/good" }), // fine
+    ]);
+    expect(res.created).toBe(1);
+    const { stories } = await repo.feed({ src: "all", sort: "new", limit: 10, offset: 0 });
+    expect(stories.map((s) => s.url)).toEqual(["https://ex.com/good"]);
   });
 });

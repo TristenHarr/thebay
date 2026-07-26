@@ -28,6 +28,9 @@ export interface IngestReport {
   created: number;
   merged: number;
   refreshed: number;
+  /** How many feeds the deployed Worker actually has configured. Reported so a
+   *  stale bundle is visible in the run output instead of being inferred. */
+  feeds: number;
   events: number;
   previewed: number;
   summarized: number;
@@ -95,5 +98,5 @@ export async function runNewsIngest(env: Env, fetchImpl: typeof fetch = fetch): 
     failures.push(`summarize: ${(err as Error).message}`);
   }
 
-  return { fetched: all.length, created, merged, refreshed, events, previewed, summarized, failures };
+  return { fetched: all.length, feeds: (feedsJson as FeedConfig[]).length, created, merged, refreshed, events, previewed, summarized, failures };
 }

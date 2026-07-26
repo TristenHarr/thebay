@@ -51,7 +51,18 @@ function stripTags(s: string): string {
   return s.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-export function parseFeed(xml: string, feedId = "rss"): IngestedStory[] {
+/** Resolve a possibly-relative feed link against the feed's own URL.
+ *  Several real feeds (Stanford AI's, for one) emit "/blog/thing/" rather than
+ *  an absolute URL — dropping those loses real stories, and passing them through
+ *  un-resolved fails canonicalization downstream. */
+function absoluteLink(href: string | null, feedUrl?: string): string | null {
+  if (!href) return null;
+  if (/^https?:\/\//i.test(href)) return href;
+  if (!feedUrl) return null;
+  try { return new URL(href, feedUrl).toString(); } catch { return null; }
+}
+
+export function parseFeed(xml: string, feedId = "rss", feedUrl?: string): IngestedStory[] {
   const blocks = [
     ...String(xml ?? "").matchAll(/<(item|entry)\b[\s\S]*?<\/\1>/gi),
   ].map((m) => m[0]);
@@ -59,7 +70,7 @@ export function parseFeed(xml: string, feedId = "rss"): IngestedStory[] {
   const out: IngestedStory[] = [];
   for (const b of blocks) {
     const title = tag(b, "title");
-    const link = tag(b, "link") || atomLink(b);
+    const link = absoluteLink(tag(b, "link") || atomLink(b), feedUrl);
     const guid = tag(b, "guid") || tag(b, "id") || link;
     const dateRaw = tag(b, "pubDate") || tag(b, "published") || tag(b, "updated") || tag(b, "dc:date");
     const parsed = dateRaw ? Date.parse(dateRaw) : NaN;
@@ -92,12 +103,22 @@ export interface FeedConfig { id: string; url: string; topics?: string[]; enable
  * everything on the site, drowning 32 other sources. Feeds are ordered
  * newest-first by convention, so taking the head is both cheap and correct.
  */
-export const MAX_ITEMS_PER_FEED = 20;
+export const MAX_ITEMS_PER_FEED = 12;
 
 /**
  * Fetch many feeds. Per-feed failures are isolated and counted; we only throw if
  * EVERY feed failed, matching the convention in src/sources/ical.ts.
  */
+/**
+ * Feeds fetched at once.
+ *
+ * Sequential fetching does not scale past a handful of sources: at ~0.5s each,
+ * 86 feeds is 45 seconds of a cron tick spent waiting on sockets. Bounded rather
+ * than unbounded so we stay a polite client and stay well inside the Worker
+ * subrequest budget.
+ */
+export const FEED_CONCURRENCY = 8;
+
 export async function fetchFeeds(
   feeds: FeedConfig[],
   fetchImpl: typeof fetch = fetch,
@@ -106,16 +127,23 @@ export async function fetchFeeds(
   const stories: IngestedStory[] = [];
   const failed: string[] = [];
 
-  for (const f of active) {
+  const one = async (f: FeedConfig) => {
     try {
       const res = await fetchImpl(f.url, { headers: { accept: "application/rss+xml, application/xml, text/xml", "user-agent": USER_AGENT } });
       if (!res.ok) throw new Error(String(res.status));
-      const items = parseFeed(await res.text(), f.id).slice(0, f.max ?? MAX_ITEMS_PER_FEED);
+      const items = parseFeed(await res.text(), f.id, f.url).slice(0, f.max ?? MAX_ITEMS_PER_FEED);
       for (const it of items) stories.push(f.topics?.length ? { ...it, topics: f.topics } : it);
     } catch {
       failed.push(f.id);
     }
-  }
+  };
+
+  // Fixed-size worker pool over a shared cursor.
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(FEED_CONCURRENCY, active.length) }, async () => {
+    while (cursor < active.length) await one(active[cursor++]!);
+  });
+  await Promise.all(workers);
 
   if (active.length && failed.length === active.length) throw new Error(`all ${active.length} feeds failed`);
   return { stories, failed };

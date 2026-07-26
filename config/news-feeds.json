@@ -262,5 +262,429 @@
       "software"
     ],
     "enabled": true
+  },
+  {
+    "id": "aaronson",
+    "url": "https://scottaaronson.blog/?feed=rss2",
+    "topics": [
+      "math"
+    ],
+    "enabled": true,
+    "note": "Scott Aaronson \u2014 complexity and quantum."
+  },
+  {
+    "id": "adafruit",
+    "url": "https://blog.adafruit.com/feed/",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "allaboutcircuits",
+    "url": "https://www.allaboutcircuits.com/rss/news/",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "antirez",
+    "url": "http://antirez.com/rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arstechnica",
+    "url": "https://feeds.arstechnica.com/arstechnica/index",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-math-ds",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:math.DS&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-math-oc",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:math.OC&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-math-pr",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:math.PR&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "avc",
+    "url": "https://avc.mirror.xyz/feed/atom",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "bair",
+    "url": "https://bair.berkeley.edu/blog/feed.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "berkeleyside",
+    "url": "https://www.berkeleyside.org/feed",
+    "topics": [],
+    "enabled": true
+  },
+  {
+    "id": "brendangregg",
+    "url": "https://www.brendangregg.com/blog/rss.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "chipletter",
+    "url": "https://thechipletter.substack.com/feed",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true,
+    "note": "Semiconductor history and analysis."
+  },
+  {
+    "id": "cnx-software",
+    "url": "https://www.cnx-software.com/feed/",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "danluu",
+    "url": "https://danluu.com/atom.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Long-form systems and performance writing."
+  },
+  {
+    "id": "deepmind",
+    "url": "https://deepmind.google/blog/rss.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "discord-eng",
+    "url": "https://discord.com/blog/rss.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "dropbox-tech",
+    "url": "https://dropbox.tech/feed",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "flyio",
+    "url": "https://fly.io/blog/feed.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "generalist",
+    "url": "https://www.generalist.com/feed",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "goblog",
+    "url": "https://go.dev/blog/feed.atom",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "hackster",
+    "url": "https://www.hackster.io/news.atom",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "hillelwayne",
+    "url": "https://buttondown.com/hillelwayne/rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "huggingface",
+    "url": "https://huggingface.co/blog/feed.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "importai",
+    "url": "https://importai.substack.com/feed",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "infoq",
+    "url": "https://feed.infoq.com/",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "instacart-eng",
+    "url": "https://tech.instacart.com/feed",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "jvns",
+    "url": "https://jvns.ca/atom.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "lilianweng",
+    "url": "https://lilianweng.github.io/index.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "mlsys-stanford",
+    "url": "https://ai.stanford.edu/blog/feed.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "ncatlab-cafe",
+    "url": "https://golem.ph.utexas.edu/category/atom10.xml",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "notboring",
+    "url": "https://www.notboring.co/feed",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "paloaltoonline",
+    "url": "https://www.paloaltoonline.com/feed/",
+    "topics": [],
+    "enabled": true
+  },
+  {
+    "id": "pinterest-eng",
+    "url": "https://medium.com/feed/pinterest-engineering",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "pythoninsider",
+    "url": "https://blog.python.org/feeds/posts/default",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "rustblog",
+    "url": "https://blog.rust-lang.org/feed.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "saastr",
+    "url": "https://www.saastr.com/feed/",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "sanjosespotlight",
+    "url": "https://sanjosespotlight.com/feed/",
+    "topics": [],
+    "enabled": true
+  },
+  {
+    "id": "semianalysis",
+    "url": "https://semianalysis.com/feed/",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true,
+    "note": "Deep semiconductor and datacenter analysis."
+  },
+  {
+    "id": "sentry",
+    "url": "https://blog.sentry.io/feed.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "sfist",
+    "url": "https://sfist.com/rss/",
+    "topics": [],
+    "enabled": true
+  },
+  {
+    "id": "simonwillison",
+    "url": "https://simonwillison.net/atom/everything/",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Best-in-class LLM coverage."
+  },
+  {
+    "id": "slack-eng",
+    "url": "https://slack.engineering/feed/",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "slashdot",
+    "url": "https://rss.slashdot.org/Slashdot/slashdotMain",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "stratechery",
+    "url": "https://stratechery.com/feed/",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true,
+    "note": "Strategy analysis; free posts only."
+  },
+  {
+    "id": "supabase",
+    "url": "https://supabase.com/rss.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "tailscale",
+    "url": "https://tailscale.com/blog/index.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "techcrunch",
+    "url": "https://techcrunch.com/feed/",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "techmeme",
+    "url": "https://www.techmeme.com/feed.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Aggregator of tech business news."
+  },
+  {
+    "id": "terrytao",
+    "url": "https://terrytao.wordpress.com/feed/",
+    "topics": [
+      "math"
+    ],
+    "enabled": true,
+    "note": "Terence Tao's blog."
+  },
+  {
+    "id": "tomshardware",
+    "url": "https://www.tomshardware.com/feeds/all",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "tomtunguz",
+    "url": "https://tomtunguz.com/index.xml",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "vercel",
+    "url": "https://vercel.com/atom",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
   }
 ]
