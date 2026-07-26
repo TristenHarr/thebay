@@ -138,6 +138,12 @@ export class ShadowsRepo {
     return r ? { id: r.id, body: r.body ?? null, cell: r.cell, modStatus: r.mod_status } : null;
   }
 
+  /** The author of a shadow (for awarding reaction-received points). Null if gone. */
+  async authorOf(id: string): Promise<string | null> {
+    const r = await this.db.prepare("SELECT author_id FROM shadows WHERE id = ?").bind(id).first<Row>();
+    return r ? r.author_id : null;
+  }
+
   /** Hard-delete everything past its 24h — the cron GC backstop. Returns media
    *  references so the caller can also delete the R2 objects / Stream videos. */
   async deleteExpired(now: Date = new Date()): Promise<{ ids: string[]; mediaKeys: string[]; streamIds: string[] }> {

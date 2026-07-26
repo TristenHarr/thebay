@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ShadowsRepo } from "../../storage/d1/shadows-repo";
 import { SocialRepo } from "../../storage/d1/social-repo";
+import { PlatformRepo } from "../../storage/d1/platform-repo";
 import { requireAuth, optionalAuth } from "../../auth/middleware";
 import { inBay } from "../../core/geo";
 import { ShadowPostSchema, ShadowReactSchema } from "../../../shared/schema";
@@ -142,6 +143,16 @@ export function shadowsRoutes(): App {
     const atIso = new Date().toISOString();
     const res = await repo(c).post(author.id, { ...s, body }, atIso);
 
+    // Gamify (idempotent, dedup-keyed so delete-and-repost can't farm): a daily
+    // shadow point + streak + badges, and a per-person point for a real connection.
+    try {
+      const plat = new PlatformRepo(c.env.DB);
+      await plat.recordShadow(author.id, res.cell, atIso);
+      if (s.kind === "connection" && s.connectionUserId) await plat.recordConnection(author.id, s.connectionUserId);
+    } catch {
+      /* points are a bonus, never a reason to fail the cast */
+    }
+
     const ctx = bgCtx(c);
     if (body && ctx) ctx.waitUntil(auditNewShadow(c.env, res.id, res.cell, body)); // async LLM audit → live retract on block
 
@@ -164,11 +175,21 @@ export function shadowsRoutes(): App {
     const parsed = ShadowReactSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "bad reaction" }, 400);
     const uid = c.get("user")!.id;
+    const id = c.req.param("id");
     try {
-      if (parsed.data.on) await repo(c).react(c.req.param("id"), uid, parsed.data.emoji);
-      else await repo(c).unreact(c.req.param("id"), uid, parsed.data.emoji);
+      if (parsed.data.on) await repo(c).react(id, uid, parsed.data.emoji);
+      else await repo(c).unreact(id, uid, parsed.data.emoji);
     } catch {
       return c.json({ error: "no such shadow" }, 409); // FK: reacted to a gone shadow
+    }
+    // A reaction rewards the author (once per reactor per shadow; never self-reacts).
+    if (parsed.data.on) {
+      try {
+        const author = await repo(c).authorOf(id);
+        if (author) await new PlatformRepo(c.env.DB).recordReactionReceived(author, id, uid);
+      } catch {
+        /* points are a bonus */
+      }
     }
     return c.json({ ok: true });
   });

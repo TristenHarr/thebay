@@ -10,15 +10,21 @@ const POINT_LABELS: Record<string, { icon: string; label: string }> = {
   host: { icon: "🎤", label: "Events hosted" },
   intro: { icon: "🤝", label: "Warm intros" },
   mentor: { icon: "🧭", label: "Mentoring" },
+  shadow: { icon: "🌉", label: "Shadows cast" },
+  connection: { icon: "🤝", label: "Connections made" },
+  reaction: { icon: "🔥", label: "Reactions earned" },
 };
 const ACHIEVEMENTS: Record<string, { icon: string; title: string; desc: string }> = {
   first_review: { icon: "⭐", title: "Critic", desc: "Wrote your first event review." },
   first_checkin: { icon: "📍", title: "Showed up", desc: "Checked in to your first event." },
   first_host: { icon: "🎤", title: "Host", desc: "Hosted your first event." },
   super_connector: { icon: "🌟", title: "Super-connector", desc: "Made warm intros across the community." },
+  first_shadow: { icon: "🌉", title: "First light", desc: "Cast your first shadow over the Bay." },
+  connector: { icon: "🤝", title: "Connector", desc: "Logged a connection you made in person." },
+  local_legend: { icon: "🏴‍☠️", title: "Local legend", desc: "Cast shadows from five corners of the Bay." },
 };
 const title = (k: string) => k.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
-const STREAK_LABEL: Record<string, string> = { attend: "Attendance streak", review: "Review streak" };
+const STREAK_LABEL: Record<string, string> = { attend: "Attendance streak", review: "Review streak", shadow: "Daily shadow streak" };
 
 function Flame({ n }: { n: number }) {
   return <span className="font-mono text-gold">{"🔥".repeat(Math.min(5, Math.max(1, n)))}<span className="ml-1 text-text">{n}</span></span>;
@@ -29,7 +35,8 @@ export function Achievements() {
   const { data: me } = useGetMeQuery();
   if (isLoading) return <Spinner />;
 
-  const achievements = data?.achievements || [];
+  // `shadow_area` is an internal per-area counter behind the local_legend badge, not a trophy.
+  const achievements = (data?.achievements || []).filter((a: any) => a.kind !== "shadow_area");
   const streaks = (data?.streaks || []).filter((s: any) => s.count > 0 || s.best > 0);
   const points = data?.points || [];
   const total = points.reduce((s: number, p: any) => s + (p.points || 0), 0);

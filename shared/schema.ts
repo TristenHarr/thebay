@@ -155,6 +155,10 @@ export const POINTS = {
   // thebay.news. Submitting is worth more than commenting, and voting is worth
   // nothing — paying for votes buys you vote-farming, not signal.
   submit: 10, comment: 3,
+  // Shadows (the live board). A daily cast is cheap presence; a real connection you
+  // made in person is the prize; a reaction received is a nudge. All dedup-keyed so
+  // delete-and-repost can't farm them.
+  shadow: 4, connection: 15, reaction: 2,
 } as const;
 export type PointKind = keyof typeof POINTS;
 

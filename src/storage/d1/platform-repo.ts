@@ -307,6 +307,51 @@ export class PlatformRepo {
       .run();
   }
 
+  // ── shadows gamification (idempotent; delete-and-repost can't farm) ─────────
+  /** A cast shadow: a per-day point + the daily shadow streak + first-shadow /
+   *  area-explorer / local-legend badges. A given day's cast counts exactly once. */
+  async recordShadow(userId: string, cell: string, atIso: string = nowIso()): Promise<void> {
+    const day = atIso.slice(0, 10);
+    await this.award(userId, "shadow", `shadow:${userId}:${day}`);
+    await this.bumpDailyStreak(userId, "shadow", new Date(atIso).getTime());
+    await this.grantAchievement(userId, "first_shadow", `first_shadow:${userId}`);
+    // Cast from a new ~5km area (geohash p4) → track it; 5 distinct areas = local legend.
+    const area = cell.slice(0, 4);
+    await this.grantAchievement(userId, "shadow_area", `shadow_area:${userId}:${area}`, { area });
+    const seen = await this.db.prepare("SELECT COUNT(*) AS n FROM achievements WHERE user_id = ? AND kind = 'shadow_area'").bind(userId).first<Row>();
+    if ((seen?.n ?? 0) >= 5) await this.grantAchievement(userId, "local_legend", `local_legend:${userId}`);
+  }
+
+  /** A real in-person connection: a point per unique person you tag, ever, + the connector badge. */
+  async recordConnection(userId: string, otherUserId: string): Promise<void> {
+    await this.award(userId, "connection", `connection:${userId}:${otherUserId}`);
+    await this.grantAchievement(userId, "connector", `connector:${userId}`);
+  }
+
+  /** Someone reacted to your shadow: a small point to the author, once per reactor per shadow. */
+  async recordReactionReceived(authorId: string, shadowId: string, reactorId: string): Promise<void> {
+    if (authorId === reactorId) return; // no points for reacting to your own shadow
+    await this.award(authorId, "reaction", `reaction:${shadowId}:${reactorId}`);
+  }
+
+  /** A day-granular streak: advances once per calendar day, resets on a skipped day. */
+  private async bumpDailyStreak(userId: string, kind: string, atMs: number): Promise<void> {
+    const cur = await this.getStreak(userId, kind);
+    const DAY = 86_400_000;
+    const today = Math.floor(atMs / DAY);
+    const lastDay = cur.last_at ? Math.floor(new Date(cur.last_at).getTime() / DAY) : null;
+    if (lastDay === today) return; // already counted today
+    const count = lastDay !== null && today - lastDay === 1 ? cur.count + 1 : 1;
+    const best = Math.max(cur.best, count);
+    await this.db
+      .prepare(
+        `INSERT INTO streaks (user_id, kind, count, best, last_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, kind) DO UPDATE SET count = excluded.count, best = excluded.best, last_at = excluded.last_at`,
+      )
+      .bind(userId, kind, count, best, new Date(atMs).toISOString())
+      .run();
+  }
+
   // ── points (idempotent; shares the ledger with SocialRepo) ──────────────────
   private async award(userId: string, kind: keyof typeof POINTS, dedupKey: string, eventId?: string): Promise<void> {
     await this.db

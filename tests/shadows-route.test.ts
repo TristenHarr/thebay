@@ -165,6 +165,27 @@ describe("moderation", () => {
   });
 });
 
+describe("gamification wiring", () => {
+  it("a cast awards a shadow point; a same-day connection adds more without double-counting the cast", async () => {
+    const ann = await login(t, "ann@x.com", "Ann");
+    const bob = await login(t, "bob@x.com", "Bob");
+    await call(t, "/api/shadows", { method: "POST", cookie: ann.cookie, body: { ...SF, kind: "thought", body: "gm bay" } });
+    expect((await call(t, "/api/me", { cookie: ann.cookie })).json.points).toBe(4); // shadow
+    await call(t, "/api/shadows", { method: "POST", cookie: ann.cookie, body: { ...SF, kind: "connection", connectionUserId: bob.user.id, body: "met bob" } });
+    // shadow point is deduped to once/day; +15 for the connection = 19
+    expect((await call(t, "/api/me", { cookie: ann.cookie })).json.points).toBe(19);
+  });
+
+  it("a reaction rewards the shadow's author, not the reactor", async () => {
+    const ann = await login(t, "ann@x.com", "Ann");
+    const bob = await login(t, "bob@x.com", "Bob");
+    const posted = await call(t, "/api/shadows", { method: "POST", cookie: ann.cookie, body: { ...SF, kind: "thought", body: "hi" } });
+    const before = (await call(t, "/api/me", { cookie: ann.cookie })).json.points;
+    await call(t, `/api/shadows/${posted.json.id}/react`, { method: "POST", cookie: bob.cookie, body: { emoji: "🔥" } });
+    expect((await call(t, "/api/me", { cookie: ann.cookie })).json.points).toBe(before + 2); // author +2
+  });
+});
+
 describe("POST /api/shadows/media — ephemeral rich-content upload", () => {
   it("stores a photo to R2 and the key round-trips into a photo shadow", async () => {
     const { cookie } = await login(t, "ann@x.com", "Ann");
