@@ -49,7 +49,9 @@ jobs:
 
       - name: Run the Shadows visual test (screenshots + video)
         id: visual
-        run: ARTIFACTS=./artifacts/visual npm run test:visual
+        # Call the file directly (not `npm run test:visual`) so this is immune to
+        # the script name being repurposed by another track.
+        run: ARTIFACTS=./artifacts/visual node tests/shadows-visual.mjs
 
       - name: Convert the replay to a GIF
         if: always()
