@@ -41,7 +41,7 @@ function buildUrl(location: string, query: string, page: number): string {
 }
 
 /** Balanced-brace extraction of `window.__SERVER_DATA__ = {...}`. */
-function extractAssignedJson(html: string, marker: string): any | null {
+export function extractAssignedJson(html: string, marker: string): any | null {
   const i = html.indexOf(marker);
   if (i < 0) return null;
   const start = html.indexOf("{", i);
@@ -82,7 +82,7 @@ function txt(v: any): string | undefined {
   return String(v);
 }
 
-function getResults(data: any): any[] {
+export function getResults(data: any): any[] {
   const e = data?.search_data?.events;
   if (Array.isArray(e?.results)) return e.results;
   if (Array.isArray(e)) return e;
@@ -90,7 +90,7 @@ function getResults(data: any): any[] {
   return [];
 }
 
-function mapEbEvent(ev: any, cfg: SourceConfig<EbParams>): RawEvent | null {
+export function mapEbEvent(ev: any, cfg: SourceConfig<EbParams>): RawEvent | null {
   const title = txt(ev.name);
   const url = ev.url || ev.tickets_url || ev.vanity_url;
   const start = ev.start?.utc || ev.start_date || ev.start?.local;

@@ -32,7 +32,7 @@ function pick(...vals: any[]): string | undefined {
   return undefined;
 }
 
-function mapLumaEvent(entry: any, cfg: SourceConfig<LumaParams>): RawEvent | null {
+export function mapLumaEvent(entry: any, cfg: SourceConfig<LumaParams>): RawEvent | null {
   const ev = entry?.event ?? entry;
   if (!ev) return null;
   const title = pick(ev.name);

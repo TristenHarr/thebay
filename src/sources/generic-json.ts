@@ -13,6 +13,35 @@ const GenericJsonParams = z.object({
 });
 type GenericJsonParams = z.infer<typeof GenericJsonParams>;
 
+/** Map one arbitrary JSON item onto a RawEvent via the source's fieldMap. Pure +
+ *  exported so the mapping contract is unit-testable without a live fetch. */
+export function mapGenericItem(item: any, fieldMap: Record<string, string>, sourceId: string): RawEvent | null {
+  const g = (key: string): string | undefined => {
+    const f = fieldMap[key];
+    return f ? asString(getPath(item, f)) : undefined;
+  };
+  const title = g("title");
+  const startRaw = g("startRaw");
+  const link = g("url");
+  if (!title || !startRaw || !link) return null;
+  return {
+    sourceId,
+    sourceType: "generic-json",
+    externalId: g("externalId"),
+    title,
+    description: g("description"),
+    startRaw,
+    endRaw: g("endRaw"),
+    venueName: g("venueName"),
+    address: g("address"),
+    city: g("city"),
+    url: link,
+    organizer: g("organizer"),
+    imageUrl: g("imageUrl"),
+    raw: item,
+  };
+}
+
 export const genericJsonAdapter: SourceAdapter<GenericJsonParams> = {
   type: "generic-json",
   parseParams(raw) {
@@ -26,30 +55,8 @@ export const genericJsonAdapter: SourceAdapter<GenericJsonParams> = {
 
     const out: RawEvent[] = [];
     for (const item of list) {
-      const g = (key: string): string | undefined => {
-        const f = fieldMap[key];
-        return f ? asString(getPath(item, f)) : undefined;
-      };
-      const title = g("title");
-      const startRaw = g("startRaw");
-      const link = g("url");
-      if (!title || !startRaw || !link) continue;
-      out.push({
-        sourceId: cfg.id,
-        sourceType: "generic-json",
-        externalId: g("externalId"),
-        title,
-        description: g("description"),
-        startRaw,
-        endRaw: g("endRaw"),
-        venueName: g("venueName"),
-        address: g("address"),
-        city: g("city"),
-        url: link,
-        organizer: g("organizer"),
-        imageUrl: g("imageUrl"),
-        raw: item,
-      });
+      const mapped = mapGenericItem(item, fieldMap, cfg.id);
+      if (mapped) out.push(mapped);
     }
     ctx.logger.debug({ source: cfg.id, count: out.length }, "generic-json fetched");
     return out;

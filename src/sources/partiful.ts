@@ -13,7 +13,7 @@ const PartifulParams = z.object({
 });
 type PartifulParams = z.infer<typeof PartifulParams>;
 
-function extractNextData(html: string): any | null {
+export function extractNextData(html: string): any | null {
   const m = html.match(
     /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/,
   );
@@ -26,7 +26,7 @@ function extractNextData(html: string): any | null {
 }
 
 /** Walk the explore pageProps and collect every distinct event object. */
-function collectEvents(pp: any): any[] {
+export function collectEvents(pp: any): any[] {
   const byId = new Map<string, any>();
   const pushItem = (it: any) => {
     const ev = it?.event ?? (it?.id && it?.title ? it : null);
@@ -57,7 +57,7 @@ function imageOf(ev: any): string | undefined {
   return im.url ?? im.src ?? im.original;
 }
 
-function mapEvent(ev: any, cfg: SourceConfig<PartifulParams>): RawEvent | null {
+export function mapEvent(ev: any, cfg: SourceConfig<PartifulParams>): RawEvent | null {
   const title = ev.title;
   const startRaw = ev.startDate ?? ev.startsAt ?? ev.start;
   if (!title || !startRaw || !ev.id) return null;
