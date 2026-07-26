@@ -51,7 +51,7 @@ export function Discover({ me }: { me: any }) {
       <PageHeader
         title="Discover"
         sub={`${list.length.toLocaleString()} of ${all.length.toLocaleString()} events`}
-        right={<div className="flex gap-1.5"><Link to="/board"><Button variant="ghost">📌 Board</Button></Link><Link to="/map"><Button variant="ghost">🗺 Map</Button></Link></div>}
+        right={<div className="flex gap-1.5"><Link to="/board"><Button variant="ghost">🌉 Shadows</Button></Link><Link to="/map"><Button variant="ghost">🗺 Map</Button></Link></div>}
       />
 
       {/* filter bar */}

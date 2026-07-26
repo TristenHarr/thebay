@@ -38,7 +38,7 @@ export function CommandPalette() {
   const NAV: Cmd[] = useMemo(() => [
     { id: "home", label: "Discover events", kbd: "G D", group: "Go", run: go("/discover") },
     { id: "map", label: "Map", group: "Go", run: go("/map") },
-    { id: "board", label: "The Board (bulletin)", group: "Go", run: go("/board") },
+    { id: "board", label: "Shadows — the live board", group: "Go", run: go("/board") },
     { id: "itin", label: "My itinerary", group: "Go", run: go("/itinerary") },
     { id: "goals", label: "Goals", group: "Go", run: go("/goals") },
     { id: "trophies", label: "Achievements", group: "Go", run: go("/achievements") },

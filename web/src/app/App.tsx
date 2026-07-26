@@ -1,7 +1,9 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { NavLink, Route, Routes, Link, useLocation } from "react-router-dom";
+import { NavLink, Route, Routes, Link, Navigate, useLocation } from "react-router-dom";
+import { useDispatch } from "react-redux";
 import { useGetMeQuery, useLogoutMutation } from "../api";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { setMode } from "../features/board/shadowsSlice";
 import { Avatar, Button, cx } from "../ui/kit";
 import { getTheme, toggleTheme } from "../theme";
 import { Placeholder } from "../ui/Placeholder";
@@ -32,10 +34,18 @@ import { Integrations } from "../features/integrations/Integrations";
 import { Agent } from "../features/agent/Agent";
 // MapView pulls in MapLibre (~800kB) — lazy-load it so it never touches the main bundle.
 const MapView = lazy(() => import("../features/map/MapView").then((m) => ({ default: m.MapView })));
-const Board = lazy(() => import("../features/board/Board").then((m) => ({ default: m.Board })));
 // The live board floats over every page (never menu-hidden). Lazy so MapLibre only
-// loads when someone actually opens it.
+// loads when someone actually opens it. It supersedes the old /board page.
 const FloatingBoard = lazy(() => import("../features/board/FloatingBoard").then((m) => ({ default: m.FloatingBoard })));
+
+/** The old /board page is retired — the board now floats over the whole app. Any
+ *  /board link (menus, command palette, deep links) opens the floating board and
+ *  lands on home. */
+function BoardRedirect() {
+  const dispatch = useDispatch();
+  useEffect(() => { dispatch(setMode("open")); }, [dispatch]);
+  return <Navigate to="/" replace />;
+}
 
 const PRIMARY: [string, string][] = [
   ["/", "Home"],
@@ -134,7 +144,7 @@ export function App() {
           <Route path="/" element={<Discover me={me} />} />
           <Route path="/discover" element={<Discover me={me} />} />
           <Route path="/map" element={<Suspense fallback={<div className="p-16 text-center text-muted">Loading map…</div>}><MapView /></Suspense>} />
-          <Route path="/board" element={<Suspense fallback={<div className="p-16 text-center text-muted">Loading board…</div>}><Board me={me} /></Suspense>} />
+          <Route path="/board" element={<BoardRedirect />} />
           <Route path="/event/:id" element={<EventPage me={me} />} />
           <Route path="/event/:id/review" element={<Guard me={me}><ReviewPage /></Guard>} />
           <Route path="/event/:id/checkin" element={<Guard me={me}><Checkin me={me} /></Guard>} />
@@ -158,6 +168,14 @@ export function App() {
           <Route path="/integrations" element={<Guard me={me}><Integrations /></Guard>} />
           <Route path="/host" element={<Guard me={me}><Host /></Guard>} />
           <Route path="/agent" element={<Guard me={me}><Agent /></Guard>} />
+          {/* Parallel-track regions — each track adds its <Route>s inside its own
+              block so five agents never contend for the same lines here. Every new
+              screen also needs a data-testid + a tests/nav-matrix.mjs row. */}
+          {/* track:A */}
+          {/* track:B */}
+          {/* track:C */}
+          {/* track:D */}
+          {/* track:E */}
           <Route path="/signin" element={<SignIn />} />
           <Route path="*" element={<Discover me={me} />} />
         </Routes>
