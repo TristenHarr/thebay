@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { makeTestApp, call, login, type TestApp } from "./helpers/app";
+import { makeTestApp, makeTestEnv, call, login, type TestApp } from "./helpers/app";
+import { routeFactories } from "../src/worker/routes";
+import { Hono } from "hono";
 import { encode } from "../src/core/geohash";
 
 const SF = { lat: 37.7749, lng: -122.4194 };
@@ -114,6 +116,52 @@ describe("connection shadows require a real person", () => {
     const ok = await call(t, "/api/shadows", { method: "POST", cookie: author.cookie, body: { ...SF, kind: "connection", connectionUserId: bob.user.id, body: "met bob" } });
     expect(ok.status).toBe(200);
     expect((await call(t, `/api/shadows?cells=${cellOf(SF)}`)).json.shadows[0].connectionUserId).toBe(bob.user.id);
+  });
+});
+
+describe("moderation", () => {
+  it("hard-screens a clear threat on post (422) and never persists it", async () => {
+    const { cookie } = await login(t, "ann@x.com", "Ann");
+    const r = await call(t, "/api/shadows", { method: "POST", cookie, body: { ...SF, kind: "thought", body: "kill yourself" } });
+    expect(r.status).toBe(422);
+    expect((await call(t, `/api/shadows?cells=${cellOf(SF)}`)).json.shadows.length).toBe(0);
+  });
+
+  it("the async LLM audit retracts a shadow the model blocks", async () => {
+    // A test app with a fake Workers-AI binding that blocks, plus a real
+    // ExecutionContext so we can drain the post-response audit deterministically.
+    const { env, d1 } = makeTestEnv({ AI: { run: async () => ({ response: '{"allow": false, "reason": "targeted hate"}' }) } });
+    const app = new Hono<any>();
+    for (const make of routeFactories) app.route("/", make());
+    const tasks: Promise<unknown>[] = [];
+    const ctx = { waitUntil: (p: Promise<unknown>) => tasks.push(p), passThroughOnException() {} };
+
+    const fetchCtx = async (path: string, opts: any = {}) => {
+      const headers: Record<string, string> = { ...(opts.headers || {}) };
+      if (opts.cookie) headers.cookie = opts.cookie;
+      let body: any;
+      if (opts.body !== undefined) { headers["content-type"] = "application/json"; body = JSON.stringify(opts.body); }
+      const res = await app.fetch(new Request("http://test" + path, { method: opts.method || "GET", headers, body }), env, ctx as any);
+      const text = await res.text();
+      return { status: res.status, json: text ? JSON.parse(text) : null };
+    };
+
+    // dev-login
+    const loginRes = await app.fetch(
+      new Request("http://test/auth/dev", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "ann@x.com", name: "Ann" }) }),
+      env,
+      ctx as any,
+    );
+    const cookie = (loginRes.headers.get("set-cookie") || "").split(";")[0]!;
+
+    const posted = await fetchCtx("/api/shadows", { method: "POST", cookie, body: { ...SF, kind: "thought", body: "borderline text the model will block" } });
+    expect(posted.status).toBe(200); // posts instantly (passes the hard-screen)
+    await Promise.allSettled(tasks); // drain the async audit
+    // the model blocked it → retracted from every future read
+    expect((await fetchCtx(`/api/shadows?cells=${cellOf(SF)}`)).json.shadows.length).toBe(0);
+    const row = d1 && (await d1.prepare("SELECT mod_status, mod_reason FROM shadows WHERE id=?").bind(posted.json.id).first());
+    expect(row.mod_status).toBe("blocked");
+    expect(row.mod_reason).toBe("targeted hate");
   });
 });
 

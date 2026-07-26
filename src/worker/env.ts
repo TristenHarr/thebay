@@ -47,6 +47,10 @@ export interface Env {
   // Cloudflare Access (Zero Trust) login
   ACCESS_TEAM_DOMAIN?: string; // e.g. thebay.cloudflareaccess.com
   ACCESS_AUD?: string; // the Access application's AUD tag
+  /** Optional stronger model for shadow moderation. Absent ⇒ Workers AI (env.AI)
+   *  handles it; absent too ⇒ the deterministic hard-screen is the only gate. */
+  OPENROUTER_MODERATION_KEY?: string;
+  OPENROUTER_MODERATION_MODEL?: string;
   // Media: Cloudflare Images / Stream (optional until configured)
   CF_ACCOUNT_ID?: string;
   IMAGES_TOKEN?: string;

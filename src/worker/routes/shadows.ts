@@ -5,6 +5,7 @@ import { SocialRepo } from "../../storage/d1/social-repo";
 import { requireAuth, optionalAuth } from "../../auth/middleware";
 import { inBay } from "../../core/geo";
 import { ShadowPostSchema, ShadowReactSchema } from "../../../shared/schema";
+import { screenText, moderateText } from "../../ai/moderation";
 
 /**
  * Shadows — the ephemeral, location-sharded live board (see migrations/0011,
@@ -34,6 +35,49 @@ async function fanout(env: Env, cell: string, path: "publish" | "evict", payload
     await stub.fetch(new Request(`https://do/${path}`, { method: "POST", body: JSON.stringify(payload) }) as any);
   } catch {
     /* realtime is progressive enhancement — swallow */
+  }
+}
+
+/** Schedule background work that outlives the response (the async moderation audit,
+ *  live retraction). Returns the ExecutionContext, or null when there isn't one
+ *  (unit tests) — in which case the audit simply doesn't run, keeping tests
+ *  deterministic. Prod always has a ctx, so the audit always runs there. */
+function bgCtx(c: any): { waitUntil(p: Promise<unknown>): void } | null {
+  try {
+    return c.executionCtx ?? null;
+  } catch {
+    return null;
+  }
+}
+const modOpts = (env: Env) => ({ env, openrouterKey: env.OPENROUTER_MODERATION_KEY ?? null, model: env.OPENROUTER_MODERATION_MODEL ?? null });
+
+/** Async LLM audit of a freshly-posted shadow. If the model blocks it, mark it
+ *  blocked in D1 (hides it from every future read) and retract it live from the
+ *  cell. This is the "cheap moderators audit the stream" pass — it runs per post,
+ *  so moderation scales with activity, never a central bottleneck. */
+async function auditNewShadow(env: Env, id: string, cell: string, body: string): Promise<void> {
+  try {
+    const v = await moderateText(body, modOpts(env));
+    if (!v.allow) {
+      await new ShadowsRepo(env.DB).setModeration(id, "blocked", v.reason);
+      await fanout(env, cell, "evict", { id });
+    }
+  } catch {
+    /* best-effort audit — never throw into waitUntil */
+  }
+}
+
+/** Re-judge a reported (→pending) shadow: restore it or block it for good. */
+async function reauditReported(env: Env, id: string): Promise<void> {
+  try {
+    const repo = new ShadowsRepo(env.DB);
+    const s = await repo.getForModeration(id);
+    if (!s || s.modStatus === "blocked") return;
+    const v = await moderateText(s.body || "", modOpts(env));
+    await repo.setModeration(id, v.allow ? "ok" : "blocked", v.reason);
+    if (!v.allow) await fanout(env, s.cell, "evict", { id });
+  } catch {
+    /* best-effort */
   }
 }
 
@@ -88,10 +132,19 @@ export function shadowsRoutes(): App {
     }
     const author = c.get("user")!;
     const body = s.body?.trim() || null;
+    // Instant deterministic hard-screen: the worst content never persists, even
+    // with no LLM. The nuanced LLM audit runs async below so posting stays snappy.
+    if (body) {
+      const screen = screenText(body);
+      if (!screen.allow) return c.json({ error: "held for community guidelines", reason: screen.reason }, 422);
+    }
     const atIso = new Date().toISOString();
     const res = await repo(c).post(author.id, { ...s, body }, atIso);
 
-    if (c.env.SHADOW_CELL) {
+    const ctx = bgCtx(c);
+    if (body && ctx) ctx.waitUntil(auditNewShadow(c.env, res.id, res.cell, body)); // async LLM audit → live retract on block
+
+    if (c.env.SHADOW_CELL && ctx) {
       const shadow = {
         id: res.id, authorId: author.id, lat: s.lat, lng: s.lng, cell: res.cell, kind: s.kind,
         body, mediaKey: s.mediaKey ?? null, streamId: s.streamId ?? null, connectionUserId: s.connectionUserId ?? null,
@@ -99,8 +152,8 @@ export function shadowsRoutes(): App {
         author: { id: author.id, displayName: author.displayName, handle: author.handle, avatarKey: author.avatarKey ?? null },
         reactions: {},
       };
-      c.executionCtx.waitUntil(fanout(c.env, res.cell, "publish", shadow));
-      if (res.replaced) c.executionCtx.waitUntil(fanout(c.env, res.replaced.cell, "evict", { id: res.replaced.id }));
+      ctx.waitUntil(fanout(c.env, res.cell, "publish", shadow));
+      if (res.replaced) ctx.waitUntil(fanout(c.env, res.replaced.cell, "evict", { id: res.replaced.id }));
     }
     return c.json({ ok: true, ...res });
   });
@@ -119,9 +172,12 @@ export function shadowsRoutes(): App {
     return c.json({ ok: true });
   });
 
-  // Report → hide pending re-audit (a moderator/self-audit restores or blocks it).
+  // Report → hide pending re-audit; the async re-judge restores or blocks it.
   app.post("/api/shadows/:id/report", requireAuth, async (c) => {
-    await repo(c).report(c.req.param("id"));
+    const id = c.req.param("id");
+    await repo(c).report(id);
+    const ctx = bgCtx(c);
+    if (ctx) ctx.waitUntil(reauditReported(c.env, id));
     return c.json({ ok: true });
   });
 
@@ -131,7 +187,8 @@ export function shadowsRoutes(): App {
     const uid = c.get("user")!.id;
     const active = await repo(c).activeByAuthor(uid); // the one they hold (1-per-account)
     const deleted = await repo(c).deleteOwn(id, uid);
-    if (deleted && c.env.SHADOW_CELL && active?.id === id) c.executionCtx.waitUntil(fanout(c.env, active.cell, "evict", { id }));
+    const ctx = bgCtx(c);
+    if (deleted && active?.id === id && ctx) ctx.waitUntil(fanout(c.env, active.cell, "evict", { id }));
     return c.json({ ok: true, deleted });
   });
 

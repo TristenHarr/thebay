@@ -132,6 +132,12 @@ export class ShadowsRepo {
     return r ? { id: r.id, cell: r.cell } : null;
   }
 
+  /** Fields the async moderation audit needs to re-judge a shadow (by id, any status). */
+  async getForModeration(id: string): Promise<{ id: string; body: string | null; cell: string; modStatus: string } | null> {
+    const r = await this.db.prepare("SELECT id, body, cell, mod_status FROM shadows WHERE id = ?").bind(id).first<Row>();
+    return r ? { id: r.id, body: r.body ?? null, cell: r.cell, modStatus: r.mod_status } : null;
+  }
+
   /** Hard-delete everything past its 24h — the cron GC backstop. Returns media
    *  references so the caller can also delete the R2 objects / Stream videos. */
   async deleteExpired(now: Date = new Date()): Promise<{ ids: string[]; mediaKeys: string[]; streamIds: string[] }> {
