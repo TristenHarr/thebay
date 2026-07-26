@@ -51,6 +51,11 @@ export const MERGE_FK_TABLES = [
   // `OR IGNORE` would NOT rescue that — SQLite's ON CONFLICT covers UNIQUE/NOT NULL/CHECK
   // /PRIMARY KEY, not foreign-key violations, so it would throw mid-merge.
   "door_codes", "event_presence", "event_claims",
+  // A badge a host minted at their event (0031). NOT NULL + ON DELETE CASCADE, so it
+  // must re-point to the survivor or a merge deletes it — and its own migration says a
+  // grant is "never deleted, a true record of something a host actually did". event_id
+  // isn't UNIQUE here, so the re-point can't collide.
+  "gym_badges",
   "event_sources",
 ] as const;
 
@@ -71,6 +76,9 @@ export const MERGE_EXEMPT_TABLES: Record<string, string> = {
   // still survives in `xp_ledger` (no FK to events, never touched by a merge) and
   // `GymRepo.audit()` reports the discrepancy.
   event_gyms: "event_id is the PK — a merge would collide; gyms live on host events, which never dedup",
+  // event_id ON DELETE SET NULL — a merged event nulls the "where you met" link, but the
+  // vouch itself survives (same treatment as stories). Nothing to migrate.
+  founder_type_vouches: "event_id ON DELETE SET NULL — a merge nulls where-you-met; the vouch survives",
   // Carried automatically: `gym_awards (user_id, event_id)` references
   // `event_presence` ON UPDATE CASCADE, so moving the presence row moves the awards with
   // it. Listing it here as well would run the UPDATE *before* presence moved and throw on
