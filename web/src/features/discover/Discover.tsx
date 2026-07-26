@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useGetEventsQuery, useFriendsFeedQuery, useRsvpMutation } from "../../api";
 import { Card, Avatar, Chip, Badge, SkeletonList, PageHeader, EmptyState, Button, input } from "../../ui/kit";
 import { fmtDate } from "../feed/Feed";
-import { baseFilter, categoryCounts, applyCategoryAndSort, type DateKey, type TimeKey } from "./filter";
+import { baseFilter, categoryCounts, applyCategoryAndSort, communityCounts, COMMUNITY_LABELS, type DateKey, type TimeKey } from "./filter";
 import { useInfinite } from "../../ui/useInfinite";
 
 export function Discover({ me }: { me: any }) {
@@ -15,6 +15,7 @@ export function Discover({ me }: { me: any }) {
   const [date, setDate] = useState<DateKey>("30d");
   const [time, setTime] = useState<TimeKey>("any");
   const [cats, setCats] = useState<Set<string>>(new Set());
+  const [communities, setCommunities] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
   const [free, setFree] = useState(false);
   const [sort, setSort] = useState<"soonest" | "interesting">("soonest");
@@ -26,9 +27,11 @@ export function Discover({ me }: { me: any }) {
   const friendsByEvent = useMemo(() => new Map((ff?.items || []).map((i: any) => [i.event.id, i.friends])), [ff]);
 
   const base = useMemo(() => baseFilter(all, { date, time, q, free, trip }), [all, date, time, free, q, trip]);
-  // category facet counts (ignoring the category filter itself)
+  // category + community facet counts (ignoring their own filter, so counts stay stable)
   const catCounts = useMemo(() => categoryCounts(base), [base]);
-  const list = useMemo(() => applyCategoryAndSort(base, cats, sort), [base, cats, sort]);
+  const commCounts = useMemo(() => communityCounts(base), [base]);
+  const list = useMemo(() => applyCategoryAndSort(base, cats, sort, communities), [base, cats, sort, communities]);
+  const toggleComm = (id: string) => setCommunities((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   // lazy render — only ~24 cards up front, more as you scroll (resets when filters change)
   const { shown, sentinelRef } = useInfinite(list.length, 24, list);
 
@@ -75,6 +78,14 @@ export function Discover({ me }: { me: any }) {
         {catCounts.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {catCounts.slice(0, 10).map(([c, n]) => <Chip key={c} on={cats.has(c)} onClick={() => toggleCat(c)}>{c} <span className="font-mono opacity-60">{n}</span></Chip>)}
+          </div>
+        )}
+        {commCounts.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5" data-testid="community-filters">
+            <span className="text-xs font-semibold text-muted">🏛 Communities</span>
+            {commCounts.map(([id, n]) => (
+              <Chip key={id} on={communities.has(id)} onClick={() => toggleComm(id)}>{COMMUNITY_LABELS[id]} <span className="font-mono opacity-60">{n}</span></Chip>
+            ))}
           </div>
         )}
       </div>

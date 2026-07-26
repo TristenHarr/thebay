@@ -67,8 +67,39 @@ export function categoryCounts(events: any[]): [string, number][] {
   return [...m.entries()].sort((a, b) => b[1] - a[1]);
 }
 
-/** Final list: apply category filter (OR within selected) + sort. */
-export function applyCategoryAndSort(base: any[], cats: Set<string>, sort: "soonest" | "interesting"): any[] {
-  const r = cats.size ? base.filter((e) => (e.categories || []).some((c: string) => cats.has(c))) : base;
+/** Curated founder/AI communities we let people browse by source id → display name.
+ *  (Only these get a chip; the broad Eventbrite/Meetup/discover sweeps don't.) */
+export const COMMUNITY_LABELS: Record<string, string> = {
+  "cerebral-valley": "Cerebral Valley",
+  "luma-yc": "Y Combinator",
+  "luma-agihouse": "AGI House",
+  "luma-frontiertower": "Frontier Tower",
+  "luma-spc": "South Park Commons",
+  "luma-shack15": "SHACK15",
+  "luma-foundersinc": "Founders Inc",
+};
+
+/** How many events each curated community has, over an already base-filtered list.
+ *  An event counts once per community even if that community appears twice in its
+ *  merged sources. Most-common first. */
+export function communityCounts(events: any[]): [string, number][] {
+  const m = new Map<string, number>();
+  for (const e of events) {
+    const seen = new Set<string>();
+    for (const s of e.sources || []) {
+      const id = s?.sourceId;
+      if (id && COMMUNITY_LABELS[id] && !seen.has(id)) {
+        seen.add(id);
+        m.set(id, (m.get(id) || 0) + 1);
+      }
+    }
+  }
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+/** Final list: apply category + community filters (OR within each) + sort. */
+export function applyCategoryAndSort(base: any[], cats: Set<string>, sort: "soonest" | "interesting", communities?: Set<string>): any[] {
+  let r = cats.size ? base.filter((e) => (e.categories || []).some((c: string) => cats.has(c))) : base;
+  if (communities && communities.size) r = r.filter((e) => (e.sources || []).some((s: any) => communities.has(s?.sourceId)));
   return [...r].sort((a, b) => (sort === "interesting" ? (b.interestScore ?? -1) - (a.interestScore ?? -1) : String(a.startUtc).localeCompare(String(b.startUtc))));
 }

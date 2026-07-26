@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { inDateWindow, timeOfDay, baseFilter, categoryCounts, applyCategoryAndSort } from "../web/src/features/discover/filter";
+import { inDateWindow, timeOfDay, baseFilter, categoryCounts, applyCategoryAndSort, communityCounts, COMMUNITY_LABELS } from "../web/src/features/discover/filter";
 
 // Fixed clock: Wed 2026-06-10T20:00:00Z.
 const NOW = Date.parse("2026-06-10T20:00:00Z");
@@ -71,5 +71,41 @@ describe("baseFilter + facets + sort", () => {
     expect(applyCategoryAndSort(base, new Set(), "interesting").map((e) => e.id)).toEqual(["a", "b"]);
     // filter to infra only
     expect(applyCategoryAndSort(base, new Set(["infra"]), "soonest").map((e) => e.id)).toEqual(["a"]);
+  });
+});
+
+describe("communities (browse by source)", () => {
+  const ev = (id: string, sourceIds: string[], extra: any = {}) => ({
+    id, title: id, startUtc: "2026-08-01T18:00:00Z", categories: ["tech"], interestScore: 50,
+    sources: sourceIds.map((sourceId) => ({ sourceId })), ...extra,
+  });
+  const events = [
+    ev("a", ["luma-bay-categories", "luma-yc"]),      // YC (also found by discover)
+    ev("b", ["cerebral-valley"]),                       // Cerebral Valley
+    ev("c", ["cerebral-valley", "luma-frontiertower"]), // both CV + Frontier Tower
+    ev("d", ["eb-hubs"]),                               // a broad sweep — not a community
+  ];
+
+  it("counts events per curated community (once each), ignoring broad sweeps", () => {
+    const counts = Object.fromEntries(communityCounts(events));
+    expect(counts["cerebral-valley"]).toBe(2);
+    expect(counts["luma-yc"]).toBe(1);
+    expect(counts["luma-frontiertower"]).toBe(1);
+    expect(counts["eb-hubs"]).toBeUndefined();          // broad sweeps aren't communities
+    expect(counts["luma-bay-categories"]).toBeUndefined();
+  });
+
+  it("has friendly labels for the curated communities", () => {
+    expect(COMMUNITY_LABELS["luma-yc"]).toBe("Y Combinator");
+    expect(COMMUNITY_LABELS["cerebral-valley"]).toBe("Cerebral Valley");
+  });
+
+  it("filters the list to selected communities (OR), leaving other facets intact", () => {
+    const cv = applyCategoryAndSort(events, new Set(), "soonest", new Set(["cerebral-valley"]));
+    expect(cv.map((e) => e.id).sort()).toEqual(["b", "c"]);
+    const cvOrYc = applyCategoryAndSort(events, new Set(), "soonest", new Set(["cerebral-valley", "luma-yc"]));
+    expect(cvOrYc.map((e) => e.id).sort()).toEqual(["a", "b", "c"]);
+    // no community selected → unchanged
+    expect(applyCategoryAndSort(events, new Set(), "soonest").length).toBe(4);
   });
 });
