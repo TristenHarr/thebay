@@ -75,6 +75,7 @@ export function FloatingBoard({ me }: { me: any }) {
       <button
         onClick={() => dispatch(setMode("open"))}
         className="shadows-bubble"
+        data-testid="shadows-bubble"
         aria-label="Open the live board"
         title="Shadows — the live board"
       >
@@ -145,7 +146,7 @@ function Panel({ me, ui, dispatch, liveCount, heat }: { me: any; ui: RootState["
   const setPanelMode = (m: ShadowsMode) => dispatch(setMode(m));
 
   return (
-    <div className="shadows-panel animate-fade-up" style={style} onPointerMove={(e) => { onDragMove(e); onRezMove(e); }} onPointerUp={() => { onDragUp(); onRezUp(); }}>
+    <div className="shadows-panel animate-fade-up" data-testid="shadows-panel" style={style} onPointerMove={(e) => { onDragMove(e); onRezMove(e); }} onPointerUp={() => { onDragUp(); onRezUp(); }}>
       <header className="shadows-head" onPointerDown={onDragDown}>
         <span className="shadows-title">🏴‍☠️ Shadows{liveCount > 0 && <span className="shadows-live-dot" title={`${liveCount} live in the Bay`} />}</span>
         <div className="flex-1" />
@@ -190,6 +191,10 @@ function ShadowMap({ me, heat }: { me: any; heat: { cell: string; count: number 
       }
     };
     sync();
+    // Belt-and-suspenders: the widget mounts into a flex/resizable container, so
+    // force a resize once the style has settled in case the container measured 0
+    // at init (MapLibre auto-resizes via ResizeObserver too, but this is instant).
+    requestAnimationFrame(() => map.resize());
     map.on("moveend", sync);
     return () => { map.off("moveend", sync); };
   }, [ready, mapRef]);
@@ -246,13 +251,18 @@ function ShadowMap({ me, heat }: { me: any; heat: { cell: string; count: number 
     }
   }, [shadows, heat, live, ready, mapRef, libRef]);
 
+  // The map div fills its flex parent by FLEX, never by position:absolute+inset —
+  // MapLibre stamps `position:relative` on its own container, which would cancel
+  // inset:0 and collapse the map to 0 height (the bug that hid the map entirely).
   return (
-    <div className="shadows-body">
-      <div ref={containerRef} className="shadows-map" />
-      {!live && <div className="shadows-hint">🔍 Zoom in to a spot to see individual shadows · {heat.reduce((n, h) => n + h.count, 0)} live in the Bay</div>}
-      {selected && <SelectedShadow shadow={selected} me={me} onClose={() => setSelected(null)} />}
+    <>
+      <div className="shadows-body">
+        <div ref={containerRef} data-testid="shadows-map" className="shadows-map" />
+        {!live && <div className="shadows-hint">🔍 Zoom in to a spot to see individual shadows · {heat.reduce((n, h) => n + h.count, 0)} live in the Bay</div>}
+        {selected && <SelectedShadow shadow={selected} me={me} onClose={() => setSelected(null)} />}
+      </div>
       <Composer me={me} onPosted={(lat, lng) => { const map = mapRef.current; if (map) map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), LIVE_ZOOM + 0.5), duration: 500 }); }} />
-    </div>
+    </>
   );
 }
 

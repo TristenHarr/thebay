@@ -125,6 +125,10 @@ p { text-wrap: pretty; }
   transition: transform 0.12s ease;
 }
 .note-pin:hover { transform: rotate(-8deg) scale(1.4); z-index: 2; }
+/* walking-nav endpoints — a bright origin dot and a target ring */
+.nav-pin { width: 14px; height: 14px; border-radius: 999px; border: 2px solid var(--bg); }
+.nav-pin-start { background: var(--ok); box-shadow: 0 0 12px -1px color-mix(in srgb, var(--ok) 80%, transparent); }
+.nav-pin-end { background: transparent; border-color: var(--gold); box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 45%, transparent); }
 
 /* ── Shadows: the floating live board (a pirate's chart of the Bay) ──────────── */
 .shadows-bubble {
@@ -164,8 +168,11 @@ p { text-wrap: pretty; }
 .shadows-resize { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none;
   background: linear-gradient(135deg, transparent 50%, color-mix(in srgb, var(--gold) 50%, var(--border)) 50%); border-radius: 0 0 12px 0; }
 
-.shadows-body { position: relative; flex: 1; min-height: 0; }
-.shadows-map { position: absolute; inset: 0; }
+.shadows-body { position: relative; flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
+/* Size the map by FLEX — never position:absolute+inset. MapLibre stamps
+   position:relative on its own container, which cancels inset:0 and collapses the
+   map to height:0 (the bug that made the map invisible). flex:1 is immune. */
+.shadows-map { flex: 1 1 auto; min-height: 0; width: 100%; }
 .shadows-map .maplibregl-ctrl-attrib { display: none; }
 .shadows-hint {
   position: absolute; left: 8px; right: 8px; top: 8px; z-index: 5; pointer-events: none;

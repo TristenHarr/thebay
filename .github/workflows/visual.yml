@@ -1,0 +1,137 @@
+name: Visual proof
+
+# "We need to KNOW it works, and SHOW it." This runs the Shadows widget in a real
+# browser, hard-fails if the map isn't actually rendered (the height:0 collapse
+# regression), records a video + screenshots of the whole journey, and posts an
+# inline GIF replay + screenshots straight into the PR (or the commit) so the proof
+# is right there in GitHub — not buried in a log.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: visual-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shadows-map:
+    name: Shadows map — screenshot + video proof
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push proof images to the ci-visual branch
+      pull-requests: write # comment on PRs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Order is load-bearing: build-site rmSync's dist/site, so it MUST precede build-web.
+      - name: Build the app
+        run: npm run build-site && npm run build-web
+
+      - name: Apply local D1 migrations (creates the shadows tables locally)
+        run: npx wrangler d1 migrations apply thebay-db --local
+
+      - name: Boot wrangler dev
+        run: |
+          printf 'DEV_LOGIN=1\n' > .dev.vars
+          npx wrangler dev --port 8787 --local > /tmp/wdev.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8787/api/health > /dev/null; then echo "worker up after ${i}s"; break; fi
+            sleep 2
+          done
+          curl -sf http://localhost:8787/api/health || (echo "worker never came up"; cat /tmp/wdev.log; exit 1)
+
+      - name: Run the Shadows visual test (screenshots + video)
+        id: visual
+        run: ARTIFACTS=./artifacts/visual npm run test:visual
+
+      - name: Convert the replay to a GIF
+        if: always()
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          VID="$(ls artifacts/visual/video/*.webm 2>/dev/null | head -1)"
+          if [ -n "$VID" ]; then
+            ffmpeg -y -loglevel error -i "$VID" \
+              -vf "fps=12,scale=760:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" \
+              artifacts/visual/shadows.gif
+            echo "GIF: $(du -h artifacts/visual/shadows.gif | cut -f1)"
+          else
+            echo "no video recorded"
+          fi
+
+      - name: Upload the full bundle (screenshots + video + GIF)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadows-visual-${{ github.sha }}
+          path: artifacts/visual
+          retention-days: 30
+
+      - name: Publish proof images to the ci-visual branch
+        if: always()
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          git config user.name "visual-bot"
+          git config user.email "actions@github.com"
+          if git ls-remote --exit-code --heads origin ci-visual >/dev/null 2>&1; then
+            git fetch origin ci-visual --depth=1
+            git worktree add -B ci-visual /tmp/vis origin/ci-visual
+          else
+            git worktree add --detach /tmp/vis HEAD
+            ( cd /tmp/vis && git checkout --orphan ci-visual && git rm -rf . --quiet >/dev/null 2>&1 || true )
+          fi
+          DEST="/tmp/vis/$SHA"
+          mkdir -p "$DEST"
+          cp artifacts/visual/*.png "$DEST"/ 2>/dev/null || true
+          cp artifacts/visual/shadows.gif "$DEST"/ 2>/dev/null || true
+          ( cd /tmp/vis && git add -A && git commit -m "visual proof for $SHA" --quiet && git push origin ci-visual --quiet ) || echo "nothing new to publish"
+
+      - name: Post the visual proof as a comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const sha = context.sha;
+            const repo = `${context.repo.owner}/${context.repo.repo}`;
+            const raw = (f) => `https://raw.githubusercontent.com/${repo}/ci-visual/${sha}/${f}`;
+            let s = { pass: 0, fail: 0, map: null, results: [] };
+            try { s = JSON.parse(fs.readFileSync('artifacts/visual/summary.json', 'utf8')); } catch (e) {}
+            const passed = s.fail === 0;
+            const status = passed ? '✅ PASS' : '❌ FAIL';
+            const mapH = s.map ? Math.round(s.map.height) : '?';
+            const rows = (s.results || []).map((r) => `| ${r.c ? '✅' : '❌'} | ${r.m} |`).join('\n');
+            const shots = ['01-home-with-bubble', '02-map-visible', '05-live-pin', '06-expanded']
+              .map((n) => `<img src="${raw(n + '.png')}" width="250" alt="${n}">`).join(' ');
+            const marker = '<!-- shadows-visual -->';
+            const body = [
+              marker,
+              `## 🗺️ Shadows visual proof — ${status}`,
+              ``,
+              `**Map rendered ${mapH}px tall** (gate: ≥ 200px — catches the height:0 collapse). **${s.pass} passed, ${s.fail} failed.**`,
+              ``,
+              `![replay](${raw('shadows.gif')})`,
+              ``,
+              shots,
+              ``,
+              `| | check |`,
+              `|---|---|`,
+              rows,
+              ``,
+              `<sub>Full screenshots + the raw video are in this run's <b>shadows-visual</b> artifact · <code>${sha.slice(0, 7)}</code></sub>`,
+            ].join('\n');
+            if (context.eventName === 'pull_request') {
+              const { data: comments } = await github.rest.issues.listComments({ ...context.repo, issue_number: context.issue.number });
+              const existing = comments.find((c) => c.body && c.body.includes(marker));
+              if (existing) await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+              else await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            } else {
+              await github.rest.repos.createCommitComment({ ...context.repo, commit_sha: sha, body });
+            }
