@@ -11,6 +11,18 @@ let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? "  ✓ " : "  ✗ FAIL ") + m); };
 async function step(name, fn) { try { ok(await fn(), name); } catch (e) { ok(false, `${name} — threw: ${String(e).slice(0, 140)}`); } }
 
+/**
+ * Navigate and wait for the app shell. NEVER networkidle: the floating board holds
+ * a WebSocket open to its geohash cell and the maps stream tiles indefinitely, so
+ * the network never goes idle — networkidle hangs the full timeout and then fails a
+ * page that rendered instantly. The section nav only renders once App is past its
+ * "Loading…" branch, which makes it a reliable "shell is up" signal.
+ */
+async function goApp(page, path) {
+  await page.goto(`${B}/app${path}`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid^="section-"]', { timeout: 15000 }).catch(() => {});
+}
+
 // A logged-in user in their own browser context (own cookies). Register via the
 // API (context.request shares cookies with the page), then drive the UI.
 async function mkUser(tag, name) {
@@ -32,7 +44,7 @@ const dave = await mkUser("dave", "Dave Discoverable"); // used only by people-y
 
 // ── 1. Set a goal (Alice, UI) ────────────────────────────────────────────────
 await step("Alice sets a goal", async () => {
-  await alice.page.goto(`${B}/app/goals`, { waitUntil: "networkidle" });
+  await goApp(alice.page, `/goals`);
   await alice.page.fill('input[placeholder*="Raise a seed"]', "Find a technical co-founder");
   await alice.page.click('button:has-text("Add goal")');
   await alice.page.waitForTimeout(500);
@@ -42,7 +54,7 @@ await step("Alice sets a goal", async () => {
 // ── 2. Host an event (Alice, UI) ─────────────────────────────────────────────
 let eventId = null, eventId2 = null;
 await step("Alice hosts an event", async () => {
-  await alice.page.goto(`${B}/app/host`, { waitUntil: "networkidle" });
+  await goApp(alice.page, `/host`);
   await alice.page.fill('input[required]', "Founder Dinner " + RID);
   await alice.page.fill('input[type="datetime-local"]', "2026-09-01T18:00");
   await alice.page.click('button:has-text("Publish event")');
@@ -59,7 +71,7 @@ await step("Alice hosts a 2nd event (setup)", async () => {
 
 // ── 3. RSVP an event + earn points (Bob, UI) ─────────────────────────────────
 await step("Bob RSVPs 'going' and earns points", async () => {
-  await bob.page.goto(`${B}/app/event/${eventId}`, { waitUntil: "networkidle" });
+  await goApp(bob.page, `/event/${eventId}`);
   await bob.page.locator('[data-testid="event-page"] >> text=Going').first().click();
   await bob.page.waitForTimeout(600);
   const me = await (await api(bob, "get", "/api/me")).json();
@@ -69,14 +81,14 @@ await step("Bob RSVPs 'going' and earns points", async () => {
 // ── 4. QR check-in (Alice issues token, Bob scans → UI) ──────────────────────
 await step("Bob checks in via a QR token", async () => {
   const tok = await (await api(alice, "post", `/api/events/${eventId}/checkin-token`)).json();
-  await bob.page.goto(`${B}/app/event/${eventId}/checkin?token=${tok.token}`, { waitUntil: "networkidle" });
+  await goApp(bob.page, `/event/${eventId}/checkin?token=${tok.token}`);
   await bob.page.waitForSelector('[data-testid="checkin-result"]', { timeout: 8000 });
   return (await bob.page.locator('[data-testid="checkin-result"]').innerText()).includes("checked in");
 });
 
 // ── 5. Review-gate: RSVP is blocked → review, then RSVP works (Bob, UI) ───────
 await step("Bob is review-gated, submits a review through the gate", async () => {
-  await bob.page.goto(`${B}/app/event/${eventId2}`, { waitUntil: "networkidle" });
+  await goApp(bob.page, `/event/${eventId2}`);
   await bob.page.locator('[data-testid="event-page"] >> text=Going').first().click();
   // gate redirects to the review page for the attended event
   await bob.page.waitForSelector('[data-testid="review-page"]', { timeout: 8000 });
@@ -88,14 +100,14 @@ await step("Bob is review-gated, submits a review through the gate", async () =>
 
 // ── 6. Achievements reflect the review (Bob, UI) ─────────────────────────────
 await step("Bob's review shows a trophy on Achievements", async () => {
-  await bob.page.goto(`${B}/app/achievements`, { waitUntil: "networkidle" });
+  await goApp(bob.page, `/achievements`);
   await bob.page.waitForSelector('[data-testid="achievements"]');
   return (await bob.page.locator('text=Critic').count()) > 0 || (await bob.page.locator('[data-testid="achievements"]').innerText()).toLowerCase().includes("review");
 });
 
 // ── 7. Rate a person as host (Bob rates Alice, UI) ───────────────────────────
 await step("Bob rates Alice as a host", async () => {
-  await bob.page.goto(`${B}/app/u/${alice.user.handle}`, { waitUntil: "networkidle" });
+  await goApp(bob.page, `/u/${alice.user.handle}`);
   await bob.page.locator('button:has-text("host")').first().click();
   await bob.page.locator('[data-testid="profile"] button:has-text("Submit")').first().click();
   await bob.page.waitForTimeout(500);
@@ -105,7 +117,7 @@ await step("Bob rates Alice as a host", async () => {
 
 // ── 8. Group + real-time chat (Alice creates, sends a message, UI) ───────────
 await step("Alice creates a group and sends a chat message", async () => {
-  await alice.page.goto(`${B}/app/groups`, { waitUntil: "networkidle" });
+  await goApp(alice.page, `/groups`);
   await alice.page.fill('input[placeholder="New group name…"]', "AI Infra Circle " + RID);
   await alice.page.click('button:has-text("Create")');
   await alice.page.waitForSelector('[data-testid="group-chat"]', { timeout: 8000 });
@@ -123,15 +135,15 @@ await step("Full warm-intro loop across three users", async () => {
   await api(cara, "post", `/api/friends/${alice.user.id}/request`);
   await api(alice, "post", `/api/friends/${cara.user.id}/respond`, { accept: true });
   // Bob requests a warm intro to Cara from Cara's profile (UI)
-  await bob.page.goto(`${B}/app/u/${cara.user.handle}`, { waitUntil: "networkidle" });
+  await goApp(bob.page, `/u/${cara.user.handle}`);
   await bob.page.click('button:has-text("Request a warm intro")');
   await bob.page.waitForTimeout(400);
   // Alice (connector) forwards it (UI)
-  await alice.page.goto(`${B}/app/intros`, { waitUntil: "networkidle" });
+  await goApp(alice.page, `/intros`);
   await alice.page.click('button:has-text("Forward")');
   await alice.page.waitForTimeout(400);
   // Cara accepts the incoming forward (UI)
-  await cara.page.goto(`${B}/app/intros`, { waitUntil: "networkidle" });
+  await goApp(cara.page, `/intros`);
   await cara.page.click('button:has-text("Accept")');
   await cara.page.waitForTimeout(500);
   // Bob and Cara are now friends
@@ -142,15 +154,15 @@ await step("Full warm-intro loop across three users", async () => {
 // ── 10. Co-founder match: mutual invite → match (Bob + Cara, UI) ─────────────
 await step("Bob and Cara mutually invite and match", async () => {
   // both join the pool + invite via UI
-  await bob.page.goto(`${B}/app/match`, { waitUntil: "networkidle" });
+  await goApp(bob.page, `/match`);
   await bob.page.click('button:has-text("Join the pool")').catch(() => {});
-  await cara.page.goto(`${B}/app/match`, { waitUntil: "networkidle" });
+  await goApp(cara.page, `/match`);
   await cara.page.click('button:has-text("Join the pool")').catch(() => {});
   await bob.page.waitForTimeout(400);
   // Bob invites the top card; Cara invites back → match
-  await bob.page.reload({ waitUntil: "networkidle" });
+  await bob.page.reload({ waitUntil: "domcontentloaded" });
   await bob.page.locator('button:has-text("Invite to connect")').click().catch(() => {});
-  await cara.page.reload({ waitUntil: "networkidle" });
+  await cara.page.reload({ waitUntil: "domcontentloaded" });
   await cara.page.locator('button:has-text("Invite to connect")').click().catch(() => {});
   await bob.page.waitForTimeout(500);
   // verify via API that a mutual match created a friendship (deterministic)
@@ -160,7 +172,7 @@ await step("Bob and Cara mutually invite and match", async () => {
 
 // ── 11. Community detail: create → open → members-only ranking board (UI) ────
 await step("Alice creates a community and opens its per-community ranking board", async () => {
-  await alice.page.goto(`${B}/app/communities`, { waitUntil: "networkidle" });
+  await goApp(alice.page, `/communities`);
   const name = "AI Infra Community " + RID;
   await alice.page.fill('input[placeholder*="community name"]', name);
   await alice.page.click('button:has-text("Create")');
@@ -184,7 +196,7 @@ await step("An imported connection surfaces as people-you-may-know and connects"
   const before = await (await api(alice, "get", "/api/integrations/suggestions")).json();
   const surfaced = (before.suggestions || []).some((s) => s.id === dave.user.id);
   // UI: the section renders + the Connect button works
-  await alice.page.goto(`${B}/app/integrations`, { waitUntil: "networkidle" });
+  await goApp(alice.page, `/integrations`);
   await alice.page.waitForSelector('[data-testid="people-you-may-know"]', { timeout: 8000 }).catch(() => {});
   const uiRendered = (await alice.page.locator('[data-testid="people-you-may-know"]').count()) > 0;
   await alice.page.locator('[data-testid="people-you-may-know"] button:has-text("Connect")').first().click().catch(() => {});
@@ -197,7 +209,7 @@ await step("An imported connection surfaces as people-you-may-know and connects"
 
 // ── 13. AI networking agent: enable + switch to Autopilot (UI) ───────────────
 await step("Bob enables the networking agent and switches it to Autopilot", async () => {
-  await bob.page.goto(`${B}/app/agent`, { waitUntil: "networkidle" });
+  await goApp(bob.page, `/agent`);
   await bob.page.locator('[aria-checked]').first().click().catch(() => {}); // the enable switch
   await bob.page.waitForTimeout(400);
   await bob.page.click('button:has-text("Autopilot")').catch(() => {});
