@@ -8,6 +8,7 @@ import { mediaRoutes } from "./media";
 import { aiRoutes } from "./ai";
 import { pushRoutes } from "./push";
 import { notesRoutes } from "./notes";
+import { shadowsRoutes } from "./shadows";
 // gen:imports (do not remove) — `npm run new:feature` inserts new route imports above this line
 
 /**
@@ -32,5 +33,6 @@ export const routeFactories: RouteFactory[] = [
   aiRoutes,
   pushRoutes,
   notesRoutes,
+  shadowsRoutes,
   // gen:registry (do not remove) — `npm run new:feature` inserts new factories above this line
 ];

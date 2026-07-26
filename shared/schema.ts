@@ -211,6 +211,53 @@ export const GeoAttestSchema = z.object({
 });
 export type GeoAttest = z.infer<typeof GeoAttestSchema>;
 
+// ── shadows (the ephemeral, location-sharded live board) ───────────────────────
+
+/** A fleeting drop. `thought` needs text; media kinds carry an R2 key or Stream id;
+ *  `connection` tags a person you just met. Everything expires 24h after posting. */
+export const ShadowKindSchema = z.enum(["thought", "photo", "voice", "video", "connection"]);
+export type ShadowKindT = z.infer<typeof ShadowKindSchema>;
+
+/** The curated reaction palette — a small fixed set (not arbitrary emoji) so the
+ *  live layer reads as a shared vocabulary, not a soup. */
+export const SHADOW_REACTIONS = ["🔥", "👀", "💡", "🤝", "❤️", "😯"] as const;
+export const ShadowReactSchema = z.object({
+  emoji: z.enum(SHADOW_REACTIONS),
+  on: z.boolean().default(true), // false → remove the reaction (toggle)
+});
+export type ShadowReact = z.infer<typeof ShadowReactSchema>;
+
+/** Post a shadow. The route additionally enforces the Bay GPS gate (src/core/geo)
+ *  and 1-per-account (a new post replaces your old). `refine` guarantees the kind's
+ *  required content is present so a media shadow can't ship with nothing to show. */
+export const ShadowPostSchema = z
+  .object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    kind: ShadowKindSchema.default("thought"),
+    body: z.string().max(280).optional(), // text, or a caption on a media shadow
+    mediaKey: z.string().max(400).optional(), // R2 key (photo / voice)
+    streamId: z.string().max(200).optional(), // Cloudflare Stream id (video)
+    connectionUserId: z.string().max(64).optional(), // tagged person (connection)
+  })
+  .refine(
+    (s) => {
+      switch (s.kind) {
+        case "thought":
+          return !!s.body && s.body.trim().length > 0;
+        case "photo":
+        case "voice":
+          return !!s.mediaKey;
+        case "video":
+          return !!s.streamId;
+        case "connection":
+          return !!s.connectionUserId;
+      }
+    },
+    { message: "this shadow kind needs its content (text / media / person)", path: ["kind"] },
+  );
+export type ShadowPost = z.infer<typeof ShadowPostSchema>;
+
 /* ─────────────────────────── founder graph ───────────────────────────────── */
 
 export const IntroRequestSchema = z.object({
