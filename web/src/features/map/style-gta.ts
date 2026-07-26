@@ -187,3 +187,71 @@ export const ROUTE_LAYERS = {
     paint: { "line-color": "#8fa6ff", "line-width": zoomWidth([[10, 2.5], [16, 7]]) },
   },
 } as const;
+
+/**
+ * The layers the GRAPH map adds: arcs between venues, plus a halo/dot per node.
+ *
+ * These live here rather than in the component for the same reason `ROUTE_LAYERS` does — the
+ * palette `C` and the `zoomWidth` helper are module-private, and a component reaching for
+ * either would have to duplicate them.
+ *
+ * Two things are deliberate in the paint:
+ *
+ *  · **tier is visible.** An `inferred` arc is dashed and dimmer, because it asserts nothing
+ *    (`assertsFact` in core/graph/evidence.ts). If it looked like an `attested` one, the whole
+ *    evidence ladder would be decoration.
+ *  · **`arcActive` exists so hover is a `setFilter`**, not a source rebuild. Re-serialising
+ *    400 arcs to highlight one would drop a frame on every mouse move.
+ *
+ * There is no `symbol` layer on purpose: `OSM_STYLE` declares no `glyphs`, so a text layer
+ * renders nothing and logs an error. Labels come from a DOM callout instead.
+ */
+export const GRAPH_LAYERS = {
+  arcSourceId: "graph-arcs",
+  nodeSourceId: "graph-nodes",
+  arcGlow: {
+    id: "graph-arc-glow", type: "line", source: "graph-arcs",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": C.route,
+      "line-width": ["*", zoomWidth([[9, 3], [15, 10]]), ["get", "wScale"]],
+      "line-opacity": 0.18,
+      "line-blur": 6,
+    },
+  },
+  arcLine: {
+    id: "graph-arc-line", type: "line", source: "graph-arcs",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": ["match", ["get", "tier"], "attested", "#8fa6ff", "stated", C.route, C.path],
+      "line-width": ["*", zoomWidth([[9, 1.2], [15, 4]]), ["get", "wScale"]],
+      "line-opacity": ["interpolate", ["linear"], ["get", "strength"], 0, 0.25, 1, 0.9],
+      "line-dasharray": ["case", ["==", ["get", "tier"], "inferred"], ["literal", [2, 2]], ["literal", [1, 0]]],
+    },
+  },
+  /** Selection highlight. Driven by `setFilter`, never by rebuilding the source. */
+  arcActive: {
+    id: "graph-arc-active", type: "line", source: "graph-arcs",
+    filter: ["==", ["get", "id"], ""],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": C.highway, "line-width": zoomWidth([[9, 2.5], [15, 7]]), "line-opacity": 0.95 },
+  },
+  nodeHalo: {
+    id: "graph-node-halo", type: "circle", source: "graph-nodes",
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["get", "degree"], 1, 6, 25, 20],
+      "circle-color": C.route,
+      "circle-blur": 0.9,
+      "circle-opacity": 0.3,
+    },
+  },
+  nodeDot: {
+    id: "graph-node-dot", type: "circle", source: "graph-nodes",
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["get", "degree"], 1, 3, 25, 9],
+      "circle-color": ["match", ["get", "type"], "place", C.park, C.major],
+      "circle-stroke-width": 1,
+      "circle-stroke-color": C.casing,
+    },
+  },
+} as const;

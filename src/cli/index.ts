@@ -9,6 +9,10 @@ Usage:
 Commands:
   scrape [--source <id>]... [--no-tag] [--concurrency <n>]
                         Scrape enabled sources, dedupe, store, and tag.
+  work [--url <u>] [--token <t>] [--once] [--max <n>] [--poll <secs>]
+                        Contribute scraping to the network: ask the coordinator what
+                        to look at, fetch it, ship RAW observations. Needs a worker
+                        token (BAY_WORKER_TOKEN) from joining in person.
   scrape-news [--url <u>] [--token <t>] [--dry-run]
                         Harvest sources that refuse Cloudflare's egress (OpenAlex)
                         from this residential IP and push them to thebay.news.
@@ -51,6 +55,8 @@ async function main(): Promise<void> {
       return (await import("./bundle")).bundleCommand(rest);
     case "build-site":
       return (await import("./build-site")).buildSiteCommand(rest);
+    case "work":
+      return (await import("./work")).workCommand(rest);
     case "push":
       return (await import("./push")).pushCommand(rest);
     case "geocode":

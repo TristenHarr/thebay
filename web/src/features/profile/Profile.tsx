@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useGetMeQuery, useGetProfileQuery, useUpdateMeMutation, useRequestFriendMutation, useRespondFriendMutation, useGetPublicGoalsQuery, useGetPublicAchievementsQuery, useCreateIntroMutation, useGetPersonReviewsQuery, useReviewPersonMutation } from "../../api";
+import { useGetMyCardQuery, useGetUserCardQuery, useVouchTypeMutation } from "../../api";
+import { FounderCardView } from "../identity/Card";
 import { Avatar, Button, Card, Spinner, input } from "../../ui/kit";
 import { usePwaInstall } from "../../pwa";
 
@@ -49,6 +51,12 @@ export function Profile({ self }: { self?: boolean }) {
         </div>
       </div>
       {p.bio && <p className="mt-3 text-muted">{p.bio}</p>}
+
+      {/* The card. This is what somebody sees when they catch you — types, five stat axes,
+          rarity, and any badges a gym leader has given you. */}
+      <div className="mt-4">
+        <ProfileCard handle={handle} self={self} />
+      </div>
 
       {data.isMe && (
         <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -165,6 +173,46 @@ export function Profile({ self }: { self?: boolean }) {
               ? <span className="text-sm text-muted">🤝 Intro requested</span>
               : <Button variant="ghost" onClick={async () => { await createIntro({ targetDesc: p.displayName, targetUserId: p.id }); setIntroAsked(true); }}>Request a warm intro</Button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * The card on a profile.
+ *
+ * Own profile reads `/api/me/card`; somebody else's reads `/api/u/:handle/card`, which is
+ * gated on `social_enabled` exactly as the profile itself is — a card must not become the back
+ * door to a profile somebody opted out of.
+ *
+ * The vouch button is the only interactive part, and it deliberately buys nothing: it puts a
+ * tick against a type, which is a statement that a real person stood behind the claim. If it
+ * ever paid, "I'm an investor" would become the most profitable lie on the platform.
+ */
+function ProfileCard({ handle, self }: { handle?: string; self?: boolean }) {
+  const mine = useGetMyCardQuery(undefined, { skip: !self });
+  const theirs = useGetUserCardQuery(handle!, { skip: !!self || !handle });
+  const [vouch] = useVouchTypeMutation();
+  const card = (self ? mine.data : theirs.data)?.card;
+  if (!card) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <FounderCardView card={card} />
+      {!self && card.types.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted">Met them? Vouch for what they are:</span>
+          {card.types.map((t: any) => (
+            <button
+              key={t.id}
+              className="rounded-full border border-border px-2 py-0.5 text-xs hover:border-accent"
+              onClick={() => vouch({ userId: card.userId, typeId: t.id })}
+            >
+              {t.emoji} {t.label} ✓
+            </button>
+          ))}
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ import { getTheme, toggleTheme } from "../theme";
 import { Placeholder } from "../ui/Placeholder";
 import { CommandPalette } from "../ui/CommandPalette";
 import { SignIn } from "../features/auth/SignIn";
+import { LevelBar } from "../features/xp/LevelBar";
 import { SECTIONS, sectionFor } from "./nav";
 import { SectionTabs } from "./SectionTabs";
 
@@ -29,7 +30,11 @@ import { Communities } from "../features/communities/Communities";
 import { Community } from "../features/communities/Community";
 import { NetworkGraph } from "../features/graph/NetworkGraph";
 import { Achievements } from "../features/achievements/Achievements";
+import { Identity } from "../features/identity/Identity";
 import { Checkin } from "../features/checkin/Checkin";
+import { Gyms } from "../features/gym/Gyms";
+import { Gym } from "../features/gym/Gym";
+import { Door } from "../features/gym/Door";
 import { Media } from "../features/media/Media";
 import { Itinerary } from "../features/itinerary/Itinerary";
 import { Integrations } from "../features/integrations/Integrations";
@@ -47,7 +52,15 @@ const City = lazy(() => import("../features/city/City").then((m) => ({ default: 
 const Nav = lazy(() => import("../features/nav/Nav").then((m) => ({ default: m.Nav })));
 // The live board floats over every page (never menu-hidden). Lazy so MapLibre only
 // loads when someone actually opens it. It supersedes the old /board page.
+// Lazy on purpose: Handshake carries a QR encoder AND a QR decoder (jsQR), which have no
+// business in the bundle every visitor downloads to look at events.
+const Handshake = lazy(() => import("../features/network/Handshake"));
+const Contribute = lazy(() => import("../features/network/Contribute"));
 const FloatingBoard = lazy(() => import("../features/board/FloatingBoard").then((m) => ({ default: m.FloatingBoard })));
+const Pokedex = lazy(() => import("../features/pokedex/Pokedex").then((m) => ({ default: m.Pokedex })));
+const Crawls = lazy(() => import("../features/crawls/Crawls").then((m) => ({ default: m.Crawls })));
+// The graph drawn over the real Bay — MapLibre again, so lazy for the same reason.
+const GraphMap = lazy(() => import("../features/graph/GraphMap").then((m) => ({ default: m.GraphMap })));
 
 /** The old /board page is retired — the board now floats over the whole app. Any
  *  /board link (menus, command palette, deep links) opens the floating board and
@@ -140,6 +153,7 @@ export function App() {
         <ThemeToggle />
         {me ? (
           <div className="flex items-center gap-2">
+            <LevelBar />
             <span className="font-mono text-xs text-gold">✦ {data?.points ?? 0}</span>
             <Link to="/me"><Avatar user={me} size={30} /></Link>
             <Button variant="quiet" className="text-xs" onClick={() => logout()}>Sign out</Button>
@@ -160,8 +174,14 @@ export function App() {
           <Route path="/event/:id" element={<EventPage me={me} />} />
           <Route path="/event/:id/review" element={<Guard me={me}><ReviewPage /></Guard>} />
           <Route path="/event/:id/checkin" element={<Guard me={me}><Checkin me={me} /></Guard>} />
+          <Route path="/gyms" element={<Guard me={me}><Gyms /></Guard>} />
+          <Route path="/event/:id/gym" element={<Guard me={me}><Gym /></Guard>} />
+          <Route path="/event/:id/door" element={<Guard me={me}><Door me={me} /></Guard>} />
           <Route path="/goals" element={<Guard me={me}><Goals /></Guard>} />
           <Route path="/achievements" element={<Guard me={me}><Achievements /></Guard>} />
+          <Route path="/identity" element={<Guard me={me}><Identity /></Guard>} />
+          <Route path="/pokedex" element={<Guard me={me}><Suspense fallback={<div className="p-16 text-center text-muted">Loading Pokédex…</div>}><Pokedex /></Suspense></Guard>} />
+          <Route path="/crawls" element={<Guard me={me}><Suspense fallback={<div className="p-16 text-center text-muted">Loading crawls…</div>}><Crawls /></Suspense></Guard>} />
           <Route path="/me" element={<Guard me={me}><Profile self /></Guard>} />
           <Route path="/u/:handle" element={<Profile />} />
           {/* The old hub URLs. `/network` was a card grid and `/people`+`/signal`
@@ -179,6 +199,7 @@ export function App() {
           <Route path="/communities" element={<Guard me={me}><Communities /></Guard>} />
           <Route path="/community/:id" element={<Guard me={me}><Community /></Guard>} />
           <Route path="/network-graph" element={<Guard me={me}><NetworkGraph /></Guard>} />
+          <Route path="/graph-map" element={<Guard me={me}><Suspense fallback={<div className="p-16 text-center text-muted">Loading the map…</div>}><GraphMap /></Suspense></Guard>} />
           <Route path="/leaderboard" element={<Leaderboard me={me} />} />
           <Route path="/media" element={<Guard me={me}><Media /></Guard>} />
           <Route path="/itinerary" element={<Guard me={me}><Itinerary /></Guard>} />
@@ -203,6 +224,9 @@ export function App() {
           <Route path="/company/:slug" element={<Company me={me} />} />
           <Route path="/impact" element={<Impact me={me} />} />
           {/* end track:E */}
+          {/* The scrape network. `/handshake` is also where the QR's `/j` link lands. */}
+          <Route path="/handshake" element={<Guard me={me}><Suspense fallback={<div className="p-16 text-center text-muted">Loading the handshake…</div>}><Handshake me={me} /></Suspense></Guard>} />
+          <Route path="/contribute" element={<Guard me={me}><Suspense fallback={<div className="p-16 text-center text-muted">Loading…</div>}><Contribute me={me} /></Suspense></Guard>} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="*" element={<Discover me={me} />} />
         </Routes>

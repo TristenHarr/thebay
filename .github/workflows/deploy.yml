@@ -55,6 +55,16 @@ jobs:
       - name: Preserve live event data
         run: curl -sf https://thebay.events/events.json -o dist/site/events.json || echo "no live events.json yet"
 
+      # Apply pending D1 migrations to production BEFORE the new Worker goes live, so
+      # the tables a freshly-shipped feature reads exist the instant its code serves.
+      # (CREATE TABLE IF NOT EXISTS throughout, so re-applying is a safe no-op.)
+      - name: Apply D1 migrations (production)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply thebay-db --remote
+
       - name: Deploy thebay.events worker + assets
         uses: cloudflare/wrangler-action@v3
         with:

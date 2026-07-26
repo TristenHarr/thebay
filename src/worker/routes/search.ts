@@ -1,11 +1,25 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { requireIngestToken } from "../middleware/bearer";
 import type { Env, Vars } from "../env";
 import { SearchRepo, type SearchFilterInput, type SearchSort } from "../../storage/d1/search-repo";
 import { understandQuery, WINDOWS } from "../../core/search/understand";
 import { windowRange } from "../../core/search/window";
 import { enrichEvents, embedAndUpsert, vectorCandidates } from "../../ai/enrich";
 import { MAX_QUERY_TAGS, type TagVocabEntry } from "../../core/search/vocab";
+import { sanitizeFusionWeights } from "../../core/search/rank";
+import { RankRepo } from "../../storage/d1/rank-repo";
+import { rerank, eventToRankItem } from "../../core/rank/rerank";
+import { emptyFeatures } from "../../core/rank/features";
+import { epsilonFrom } from "../../core/rank/explore";
+import { optionalAuth } from "../../auth/middleware";
+
+/** How much wider than the page the learned model gets to reorder. 3× keeps the
+ *  rescoring window meaningful without hydrating rows nobody will see. */
+const RESCORE_WINDOW = 3;
+const RESCORE_MAX = 120;
+/** How deep to record impressions — see the note in `routes/rank.ts`. */
+const LOG_TOP = 20;
 
 /**
  * Hybrid event search: FTS5 + vector, RRF-fused, with natural-language query
@@ -82,12 +96,6 @@ export async function enrichSlice(
     nextCursor: candidates[candidates.length - 1]?.id ?? null,
   };
 }
-
-/** Admin jobs are bearer-gated with INGEST_TOKEN, same as /api/admin/ingest. */
-const authed = (c: { env: Env; req: { header(n: string): string | undefined } }) => {
-  const token = c.env.INGEST_TOKEN;
-  return !!token && c.req.header("authorization") === `Bearer ${token}`;
-};
 
 const str = (max: number) => z.string().max(max);
 const strList = (max: number) => z.array(z.string().max(120)).max(max);
@@ -211,8 +219,51 @@ async function runSearch(c: any, body: SearchBodyT) {
 
   const limit = body.limit ?? 24;
   const offset = body.offset ?? 0;
+  const sort = (body.sort ?? "relevance") as SearchSort;
+
+  /**
+   * Whether this request is a BROWSE — and therefore the one that personalizes and
+   * learns. Three conditions, each of which is a judgement about what the person asked
+   * for rather than an implementation detail:
+   *
+   *   · no text query. Someone who typed "hardware" wants relevance to those words, not
+   *     their long-run taste, and a searched result set is a different distribution from
+   *     a browse feed — training one model on both teaches it neither.
+   *   · the default sort. `soonest` and `interesting` are explicit instructions; silently
+   *     overriding them with a learned order would be a bug, not a feature.
+   *   · the first page. Reranking page two against a window page one already consumed
+   *     would duplicate and drop rows.
+   *
+   * The last one has a known consequence worth stating rather than hiding: an
+   * offset-paged request past the first page falls back to the fused order, so pages 1
+   * and 2 come from different orderings and may overlap. The app never hits this — the
+   * Discover screen's infinite scroll grows `limit` rather than advancing `offset`,
+   * precisely so the whole list stays one consistently-ranked result set. Fixing it
+   * properly means paginating a stable rescored list (a cursor over the rescored window),
+   * which is worth doing only once something actually pages by offset.
+   */
+  const browsing = !raw && sort === "relevance" && offset === 0;
+  const rank = new RankRepo(env.DB);
+  const model = browsing ? await rank.activeModel("events") : null;
+
+  // Rescore over a window WIDER than the page. This is the light-ranker / heavy-ranker
+  // split: RRF fusion is cheap and decides recall over the whole pool, the learned model
+  // is more expensive and reorders its head. Fetching only `limit` would leave the model
+  // nothing to reorder.
+  const fetchLimit = browsing ? Math.min(limit * RESCORE_WINDOW, RESCORE_MAX) : limit;
   const run = (f: SearchFilterInput) =>
-    r.search({ text: raw, filters: f, vectorIds, sort: (body.sort ?? "relevance") as SearchSort, limit, offset });
+    r.search({
+      text: raw,
+      filters: f,
+      vectorIds,
+      sort,
+      limit: fetchLimit,
+      offset,
+      // The learned fusion weights, finally filling the hook `SearchParams.weights` has
+      // always had. Absent a promoted model this is undefined and `fuse()` uses the
+      // hand-tuned DEFAULT_WEIGHTS exactly as before.
+      weights: model ? sanitizeFusionWeights(model.rrf) : undefined,
+    });
 
   let applied = filters;
   let result = await run(applied);
@@ -229,6 +280,65 @@ async function runSearch(c: any, body: SearchBodyT) {
     result = await run(applied);
   }
 
+  // ── personalize + learn (browse only) ──────────────────────────────────────
+  let events = result.events;
+  let ranking: {
+    model: number | null;
+    rescored: boolean;
+    explored: boolean;
+    window: number;
+  } | null = null;
+
+  if (browsing && events.length) {
+    const viewerId = c.get("user")?.id ?? null;
+    const ids = events.map((e) => e.id);
+    const [viewerCtx, engagement, seen] = await Promise.all([
+      rank.viewerContext(viewerId),
+      rank.engagementCounts(ids, viewerId),
+      rank.timesShown("events", viewerId, ids),
+    ]);
+
+    const out = rerank({
+      items: events,
+      toRankItem: (e) => eventToRankItem(e, engagement.get(e.id)),
+      viewer: viewerCtx,
+      surface: "events",
+      nowMs: Date.now(),
+      weights: model?.weights ?? null,
+      viewerId,
+      explore: true,
+      epsilon: epsilonFrom(env.RANK_EPSILON),
+      timesShown: seen,
+    });
+
+    events = out.items.slice(0, limit);
+    // Record what we served, with the vectors that produced the order. Only the top
+    // slots: a negative from row 90 says nothing, because nobody scrolled there. And
+    // only for a signed-in viewer — see `rank_impressions.viewer_id` in 0024.
+    if (viewerId) {
+      await rank.logImpressions({
+        surface: "events",
+        viewerId,
+        modelVersion: model ? `v${model.version}` : "v0",
+        explored: out.explored,
+        items: events.slice(0, LOG_TOP).map((e, i) => ({
+          itemId: e.id,
+          position: i,
+          features: out.features.get(e.id) ?? emptyFeatures(),
+        })),
+      });
+    }
+
+    ranking = {
+      model: model ? model.version : null,
+      rescored: out.rescored,
+      explored: out.explored,
+      window: out.items.length,
+    };
+  } else if (events.length > limit) {
+    events = events.slice(0, limit);
+  }
+
   return {
     query: {
       raw,
@@ -240,13 +350,15 @@ async function runSearch(c: any, body: SearchBodyT) {
       /** True when an inferred tag/place was dropped because it matched nothing. */
       relaxed,
     },
-    events: result.events,
+    events,
     total: result.total,
     facets: result.facets,
     used: result.used,
+    /** Null on an explicit search or sort — those are answered verbatim, not ranked. */
+    ranking,
     limit,
     offset,
-    nextOffset: offset + result.events.length < result.ranked.length ? offset + result.events.length : null,
+    nextOffset: offset + events.length < result.ranked.length ? offset + events.length : null,
   };
 }
 
@@ -254,13 +366,16 @@ export function searchRoutes(): App {
   const app = new Hono<{ Bindings: Env; Variables: Partial<Vars> }>();
 
   // ── public search ─────────────────────────────────────────────────────────
-  app.post("/api/search", async (c) => {
+  // `optionalAuth`: search stays public, but a signed-in browse is personalized and
+  // logged, so the handler needs to know who is asking. A signed-out viewer still gets
+  // ranked results — the personal features simply score 0 and global quality decides.
+  app.post("/api/search", optionalAuth, async (c) => {
     const parsed = SearchBody.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: "bad request", issues: parsed.error.issues.slice(0, 5) }, 400);
     return c.json(await runSearch(c, parsed.data));
   });
 
-  app.get("/api/search", async (c) => {
+  app.get("/api/search", optionalAuth, async (c) => {
     try {
       return c.json(await runSearch(c, bodyFromQuery(c.req.query())));
     } catch {
@@ -289,8 +404,7 @@ export function searchRoutes(): App {
    *
    *   POST /api/admin/enrich?limit=50&cursor=<lastId>&force=1&llm=0
    */
-  app.post("/api/admin/enrich", async (c) => {
-    if (!authed(c)) return c.json({ error: "unauthorized" }, 401);
+  app.post("/api/admin/enrich", requireIngestToken, async (c) => {
     const out = await enrichSlice(c.env, {
       limit: Number(c.req.query("limit")) || 50,
       cursor: c.req.query("cursor") ?? "",
@@ -302,8 +416,7 @@ export function searchRoutes(): App {
 
   /** Backfill/repair the FTS index. Triggers keep it in sync for live writes; this
    *  is for rows that predate the migration. Bounded + resumable. */
-  app.post("/api/admin/reindex", async (c) => {
-    if (!authed(c)) return c.json({ error: "unauthorized" }, 401);
+  app.post("/api/admin/reindex", requireIngestToken, async (c) => {
     const out = await repo(c).reindex({
       limit: Number(c.req.query("limit")) || 200,
       cursor: c.req.query("cursor") ?? "",
@@ -314,8 +427,7 @@ export function searchRoutes(): App {
 
   /** Add or edit vocabulary. The whole point of A1: a new tag is a row, not a
    *  deploy. Bearer-gated because the taxonomy shapes what everyone can find. */
-  app.post("/api/admin/tags", async (c) => {
-    if (!authed(c)) return c.json({ error: "unauthorized" }, 401);
+  app.post("/api/admin/tags", requireIngestToken, async (c) => {
     const parsed = VocabBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "bad payload", issues: parsed.error.issues.slice(0, 5) }, 400);
     const out = await repo(c).upsertVocab(

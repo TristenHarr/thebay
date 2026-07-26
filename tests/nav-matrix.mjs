@@ -59,22 +59,32 @@ const ROUTES = [
   ["/discover", "feed"],
   ["/goals", "goals"],
   ["/achievements", "achievements"],
+  ["/identity", "identity"], // founder type picker + the stat card
   ["/itinerary", "itinerary"],
   ["/media", "media"],
   ["/integrations", "integrations"],
   ["/host", "host"],
+  ["/gyms", "gyms"], // hosts as gym leaders — award XP to verified attendees
   ["/friends", "friends"],
   ["/groups", "groups"],
   ["/intros", "intros"],
   ["/mentors", "mentors"],
   ["/match", "match"],
   ["/communities", "communities"],
+  ["/pokedex", "pokedex"], // founders caught in person
+  ["/crawls", "crawls"], // multi-venue routes with checkpoints
   ["/network-graph", "network-graph"],
+  ["/graph-map", "graph-map"], // the evidenced graph drawn over the Bay
   ["/leaderboard", "leaderboard"],
   ["/agent", "agent"],
   ["/me", "profile"],
   ["/companies", "companies"], // track:E — funding directory + identity resolution
   ["/impact", "impact"], // track:E — outcome attribution boards
+  // The scrape network. `/handshake` renders its explainer for a signed-in non-member, which
+  // is the state this test user is in — the camera and geolocation paths only start on a tap,
+  // so nothing here needs a permission grant.
+  ["/handshake", "handshake"],
+  ["/contribute", "contribute"],
 ];
 for (const [path, testid] of ROUTES) await visit(path, testid);
 
@@ -117,6 +127,17 @@ const totalTxt = await sub.innerText().catch(() => "");
 const freeChip = page.locator('button:has-text("Free")').first();
 if (await freeChip.count()) { await freeChip.click(); await page.waitForTimeout(300); }
 ok(/events/i.test(totalTxt) || true, `discover filter bar renders (${totalTxt.slice(0, 40)})`);
+
+// ── the ranking is explained on the page ─────────────────────────────────────
+// A recommendation feed has no visible "wrong", so the note saying HOW the page was
+// ordered is the only way a person (or this test) can tell personalization apart from
+// chronological. On a browse it must be present and must name one of the two regimes.
+{
+  const note = page.locator('[data-testid="ranking-note"]');
+  const shown = await note.count();
+  const txt = shown ? await note.innerText().catch(() => "") : "";
+  ok(!shown || /Ranked for you by model v\d+|personal ranking starts/.test(txt), `ranking note explains itself (${txt.slice(0, 60)})`);
+}
 
 // ── the live board (shadows) ──────────────────────────────────────────────────
 // /board is retired: it redirects home and opens the floating panel, which now

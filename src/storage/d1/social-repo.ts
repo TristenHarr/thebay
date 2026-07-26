@@ -217,6 +217,30 @@ export class SocialRepo {
       .bind(low, high, from, ts, ts)
       .run();
   }
+  /**
+   * A connection that skips `pending`, because the two of them are standing next to
+   * each other — the scrape-network handshake (src/worker/routes/network.ts) and any
+   * future in-person QR connect. `requestFriend` models "I'd like to know you";
+   * this models "we just met", which nobody needs to accept afterwards.
+   *
+   * Upgrades an existing pending row rather than ignoring it, so meeting someone in
+   * person settles a request that was already outstanding in either direction.
+   */
+  async connectInPerson(a: string, b: string): Promise<void> {
+    if (a === b) return;
+    const [low, high] = pair(a, b);
+    const ts = nowIso();
+    await this.db
+      .prepare(
+        `INSERT INTO friendships (user_low, user_high, status, requested_by, created_at, updated_at)
+         VALUES (?, ?, 'accepted', ?, ?, ?)
+         ON CONFLICT(user_low, user_high) DO UPDATE SET
+           status = CASE WHEN friendships.status = 'blocked' THEN 'blocked' ELSE 'accepted' END,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(low, high, a, ts, ts)
+      .run();
+  }
   async respondFriend(me: string, other: string, accept: boolean): Promise<void> {
     const [low, high] = pair(me, other);
     if (accept) {
@@ -397,6 +421,29 @@ export class SocialRepo {
     return r ? toPublic(rowToUser(r)) : null;
   }
 
+  /**
+   * The events this person hosts. There was no such query anywhere — `myEvents()` in
+   * routes/integrations.ts is the RSVP-based ICS feed, not hosting — so a host had no way
+   * to see the rooms they run. The gym dashboard is unbuildable without it.
+   *
+   * `hidden = 0` because a hidden event is moderated away, and `idx_events_host` makes
+   * this an index scan rather than a table scan over the whole catalog.
+   */
+  async hostedEvents(userId: string, opts: { upcoming?: boolean; limit?: number } = {}): Promise<Array<Record<string, unknown>>> {
+    const limit = Math.max(1, Math.min(200, opts.limit ?? 50));
+    const r = await this.db
+      .prepare(
+        `SELECT id, title, start_utc AS startUtc, end_utc AS endUtc, venue_name AS venueName, city, latitude, longitude
+           FROM events
+          WHERE host_user_id = ? AND hidden = 0 ${opts.upcoming ? "AND start_utc >= ?" : ""}
+          ORDER BY start_utc DESC
+          LIMIT ?`,
+      )
+      .bind(...(opts.upcoming ? [userId, nowIso(), limit] : [userId, limit]))
+      .all<Row>();
+    return r.results ?? [];
+  }
+
   // ── points & leaderboard ──────────────────────────────────────────────────
   /** Sole writer of points. dedup_key UNIQUE ⇒ awarding twice is a no-op. */
   async awardPoints(userId: string, kind: PointKind, dedupKey: string, eventId?: string): Promise<void> {
@@ -430,7 +477,9 @@ export class SocialRepo {
 }
 
 /** Subquery yielding the accepted-friend ids of a user. Bind the user id 3×
- *  (low-side, high-side, and the accepted filter shares the same two binds). */
-const FRIEND_IDS_SQL = `
+ *  (low-side, high-side, and the accepted filter shares the same two binds).
+ *  Exported so other repos compose the one canonical definition of "my friends"
+ *  rather than each re-deriving the low/high pair convention. */
+export const FRIEND_IDS_SQL = `
   SELECT CASE WHEN user_low = ? THEN user_high ELSE user_low END
   FROM friendships WHERE (user_low = ? OR user_high = ?) AND status = 'accepted'`;

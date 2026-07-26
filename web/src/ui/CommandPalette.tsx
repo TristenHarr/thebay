@@ -50,6 +50,8 @@ export function CommandPalette() {
     // Not a destination: the board floats over whatever page you're on rather than
     // being one, so it has no place in the section tabs.
     { id: "board", label: "Shadows — the live board", hint: "City", group: "Go", run: go("/board") },
+    { id: "pokedex", label: "Founder Pokédex — catch people", hint: "Game", group: "Go", run: go("/pokedex") },
+    { id: "crawls", label: "Founder Crawls — plan a route", hint: "Game", group: "Go", run: go("/crawls") },
     { id: "newgoal", label: "Add a goal", group: "Action", run: go("/goals") },
     // Cross-domain: a full navigation through OUR handoff endpoint (relative), so
     // the reader lands on thebay.news already signed in.

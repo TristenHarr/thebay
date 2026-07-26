@@ -1,6 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { ulid } from "ulid";
 import { POINTS } from "../../../shared/schema";
+import { CHECKIN_TOKEN_TTL_MS } from "../../core/checkin/door";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
@@ -81,7 +82,27 @@ export class PlatformRepo {
   }
 
   // ── QR check-in ─────────────────────────────────────────────────────────────
-  async createCheckinToken(eventId: string, ttlMs = 60 * 60 * 1000, atMs = Date.now()): Promise<string> {
+  /**
+   * Mint the code about to go on screen, and revoke whatever was on screen before it.
+   *
+   * The revoke IS the rotation. Before this, "↻ Rotate code" minted a second valid
+   * token and left its predecessor live for the rest of its hour — so a host who
+   * rotated because they believed the screen had leaked changed nothing. Now the
+   * previous frame stops working the instant it leaves the display.
+   *
+   * `checkin_tokens` has no `revoked_at` column, so revocation is expressed by moving
+   * `expires_at` into the past. That keeps this a code change with no migration, and
+   * the existing expiry check in `checkIn` enforces it unaltered — one comparison,
+   * one meaning, nothing new to remember.
+   */
+  async createCheckinToken(eventId: string, ttlMs = CHECKIN_TOKEN_TTL_MS, atMs = Date.now()): Promise<string> {
+    // `atMs - 1`, not `atMs`: the expiry test is `expires_at < now`, so stamping the
+    // current instant would leave the old code valid for the rest of this millisecond.
+    await this.db
+      .prepare("UPDATE checkin_tokens SET expires_at = ? WHERE event_id = ? AND expires_at > ?")
+      .bind(new Date(atMs - 1).toISOString(), eventId, new Date(atMs).toISOString())
+      .run();
+
     const token = (ulid() + ulid()).toLowerCase();
     await this.db
       .prepare("INSERT INTO checkin_tokens (id, event_id, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)")
@@ -98,6 +119,20 @@ export class PlatformRepo {
     if (!tok || tok.event_id !== eventId) return "invalid";
     if (new Date(tok.expires_at).getTime() < atMs) return "expired";
 
+    return await this.completeCheckin(userId, eventId, atMs);
+  }
+
+  /**
+   * The social half of a check-in: the row, the points, the review obligation, the streak.
+   *
+   * Extracted so the HARDENED door (`GymRepo.recordPresence`, migrations/0028) can grant
+   * the same social credit without inventing a `checkin_tokens` row it has no use for. A
+   * geofenced presence claim inside the event window is strictly stronger evidence than a
+   * check-in token, so demanding a token as well would be theatre — but an attendee who
+   * scans the new door must still get their 20 points, their streak and their review
+   * obligation, or the hardened path would silently regress the review-gate.
+   */
+  async completeCheckin(userId: string, eventId: string, atMs = Date.now()): Promise<"ok" | "already"> {
     const exists = await this.db.prepare("SELECT 1 FROM checkins WHERE user_id = ? AND event_id = ?").bind(userId, eventId).first();
     if (exists) return "already";
 

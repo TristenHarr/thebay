@@ -18,6 +18,30 @@ import { MERGE_FK_TABLES, MERGE_EXEMPT_TABLES } from "../src/storage/d1/d1-repo"
  */
 
 const MIGRATIONS_DIR = resolve(process.cwd(), "migrations");
+
+/**
+ * Is a line a genuine SQL reference to `ident`, or does it merely contain the word?
+ *
+ * A bare substring search cannot tell a table name from English. `catches` matched three
+ * comments ("so it catches both typo-level and word-reorder variants") and `crawls` matched a
+ * FUNCTION of that name in `src/sources/eventbrite.ts:31` — so the dependency check below
+ * reported a broken build for tables no committed code has ever queried. A lock test that
+ * cries wolf gets muted, which costs more than the bug it was guarding against.
+ *
+ * Two shapes are real references, and nothing else is:
+ *   1. a SQL keyword immediately before it — `FROM x`, `INTO x`, `UPDATE x`, `JOIN x`,
+ *      `TABLE x`, `EXISTS x`. Every real statement against a table uses one of these.
+ *   2. the name as a complete quoted string — how a name list like `MERGE_FK_TABLES` refers
+ *      to a table it later interpolates into `UPDATE ${t} SET …`.
+ *
+ * Applied in JS rather than as a `git grep -E` pattern on purpose: `\b` is GNU-only and BSD
+ * regex (macOS) wants `[[:<:]]`, so a clever grep would behave differently on a laptop and in
+ * CI — precisely the class of bug these lock tests exist to catch.
+ */
+export function sqlReference(ident: string): RegExp {
+  const q = `["'\`]`;
+  return new RegExp(`(?:\\b(?:from|into|update|join|table|exists)\\s+${q}?${ident}(?![a-z0-9_]))|(?:${q}${ident}${q})`, "i");
+}
 const migrationFiles = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
 
 /** Migration filenames known to git, or null outside a checkout. */
@@ -253,12 +277,23 @@ describe("lock: migrations stay orderly", () => {
       if (ident.length < 4) continue; // too short to grep meaningfully
       let hits = "";
       try {
-        hits = git(["grep", "-l", "-F", "-e", ident, "HEAD", "--", "src/"]);
+        // Line-mode, so each hit can be judged in context rather than by filename alone.
+        hits = git(["grep", "-n", "-F", "-e", ident, "HEAD", "--", "src/"]);
       } catch {
         continue; // git grep exits 1 on no match
       }
-      if (hits.trim()) {
-        broken.push(`${ident} (from uncommitted ${file}) is referenced by committed ${hits.trim().split("\n").join(", ")}`);
+      const re = sqlReference(ident);
+      const files = [
+        ...new Set(
+          hits
+            .split("\n")
+            .filter((line) => line.trim() && re.test(line))
+            // `HEAD:src/foo.ts:12: …` → `HEAD:src/foo.ts`
+            .map((line) => line.split(":").slice(0, 2).join(":")),
+        ),
+      ];
+      if (files.length) {
+        broken.push(`${ident} (from uncommitted ${file}) is referenced by committed ${files.join(", ")}`);
       }
     }
 
@@ -282,5 +317,44 @@ describe("lock: migrations stay orderly", () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * The dependency check above is only as good as its matcher, and the matcher used to be a
+ * plain substring search that flagged the English word "catches". These are the exact strings
+ * that broke it, plus the real references it must never stop catching.
+ */
+describe("sqlReference — telling a table apart from the word", () => {
+  const hits = (line: string, ident: string) => sqlReference(ident).test(line);
+
+  it("ignores the word in prose and in identifiers", () => {
+    // Every one of these was a false positive that failed the suite.
+    expect(hits("// so it catches both typo-level and word-reorder variants", "catches")).toBe(false);
+    expect(hits("function crawls(p: EbParams): Crawl[] {", "crawls")).toBe(false);
+    expect(hits("  const list = crawls(p);", "crawls")).toBe(false);
+    expect(hits("{ source: cfg.id, crawls: list.length, failed }", "crawls")).toBe(false);
+    expect(hits("throw new Error(`all ${list.length} eventbrite crawls failed`)", "crawls")).toBe(false);
+  });
+
+  it("still catches every shape of a real SQL reference", () => {
+    expect(hits("SELECT * FROM catches WHERE user_id = ?", "catches")).toBe(true);
+    expect(hits("INSERT INTO catches (id) VALUES (?)", "catches")).toBe(true);
+    expect(hits("UPDATE crawls SET x = 1", "crawls")).toBe(true);
+    expect(hits("JOIN catches c ON c.id = x", "catches")).toBe(true);
+    expect(hits("CREATE TABLE IF NOT EXISTS catches (", "catches")).toBe(true);
+    expect(hits("DELETE FROM `catches`", "catches")).toBe(true);
+  });
+
+  it("catches a name list, which is how dynamic SQL names its tables", () => {
+    // `MERGE_FK_TABLES` interpolates these into `UPDATE ${t} SET event_id = ?`.
+    expect(hits('const MERGE_FK_TABLES = ["crawls", "rsvps"] as const;', "crawls")).toBe(true);
+    expect(hits("  catches: 'moved implicitly by ON UPDATE CASCADE',", "catches")).toBe(false);
+  });
+
+  it("does not match a longer table that merely starts with the name", () => {
+    // `catches` must not be reported because `catches_archive` is referenced.
+    expect(hits("SELECT * FROM catches_archive", "catches")).toBe(false);
+    expect(hits("SELECT * FROM catch", "catches")).toBe(false);
   });
 });

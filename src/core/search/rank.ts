@@ -40,6 +40,25 @@ export const DEFAULT_WEIGHTS: Required<FusionWeights> = {
   quality: 0.35,
 };
 
+/**
+ * Keep only the known list names, drop anything non-finite.
+ *
+ * The learned fusion weights are persisted as JSON in `rank_models.rrf_json`, so they
+ * arrive from the database as an untyped blob. Applied on read, this means a hand-edited
+ * row, an older schema or a NaN can never reach `fuse()` — where an unknown key would be
+ * silently ignored and a NaN would poison every score it touched.
+ */
+export function sanitizeFusionWeights(raw: unknown): FusionWeights {
+  const out: FusionWeights = {};
+  if (!raw || typeof raw !== "object") return out;
+  const obj = raw as Record<string, unknown>;
+  for (const name of LIST_NAMES) {
+    const v = obj[name];
+    if (typeof v === "number" && Number.isFinite(v)) out[name] = v;
+  }
+  return out;
+}
+
 export interface Fused {
   id: string;
   score: number;

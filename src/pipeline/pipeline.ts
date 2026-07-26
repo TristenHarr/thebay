@@ -1,12 +1,12 @@
 import pLimit from "p-limit";
-import { getAdapter } from "../sources/registry";
 import { createBrowserPool } from "../sources/util/browser";
 import type { AdapterContext } from "../sources/types";
 import { createNormalizer } from "../core/normalize/normalize";
 import { looksOutOfRegion } from "../core/normalize/region";
 import { UNKNOWN_CITY } from "../core/models/source";
 import { dedupeWithinRun } from "../core/dedup";
-import { RawEventSchema, type CanonicalEvent } from "../core/models/event";
+import { type CanonicalEvent } from "../core/models/event";
+import { executeRecipe } from "./execute";
 import type { CategoryDef } from "../core/models/category";
 import { loadSources, loadCities, loadCategories } from "../config/load";
 import { createRepository, type Repository } from "../storage";
@@ -120,15 +120,12 @@ export async function runScrape(opts: ScrapeOptions = {}): Promise<ScrapeReport>
       limit(async () => {
         const started = Date.now();
         try {
-          const adapter = getAdapter(src.type);
-          const params = adapter.parseParams(src.params);
-          const raws = await adapter.fetchEvents({ ...src, params }, ctx);
+          // Shared with the network worker (src/net/client.ts), which stops at the raws.
+          const { raws } = await executeRecipe({ id: src.id, type: src.type, params: src.params }, ctx);
 
           let normalized = 0;
           for (const r of raws) {
-            const parsed = RawEventSchema.safeParse(r);
-            if (!parsed.success) continue;
-            const canon = normalize(parsed.data, new Date());
+            const canon = normalize(r, new Date());
             if (canon) {
               collected.push(canon);
               normalized++;

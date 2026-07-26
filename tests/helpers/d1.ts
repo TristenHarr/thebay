@@ -43,9 +43,23 @@ class Stmt {
 export class SqliteD1 {
   constructor(public db: Database.Database) {}
   prepare(sql: string) { return new Stmt(this.db, sql); }
+  /**
+   * D1 returns `D1Result[]` from `batch()` — each with `meta.changes`. better-sqlite3
+   * returns its own `RunResult` (`{ changes, lastInsertRowid }`), so a repo that counts
+   * `res.meta.changes` to report "how many rows did I actually insert" silently read 0
+   * in tests and the right number in production: green suite, wrong number live. Shape
+   * the results like D1's, keeping the better-sqlite3 fields alongside so anything
+   * already reading `.changes` is unaffected.
+   */
   async batch(stmts: Stmt[]) {
     const tx = this.db.transaction((ss: Stmt[]) => ss.map((s) => s.execSync()));
-    return tx(stmts);
+    return tx(stmts).map((r: any) => ({
+      success: true,
+      results: [],
+      meta: { changes: r.changes, last_row_id: Number(r.lastInsertRowid) },
+      changes: r.changes,
+      lastInsertRowid: r.lastInsertRowid,
+    }));
   }
   async exec(sql: string) { this.db.exec(sql); return { count: 0, duration: 0 }; }
 }

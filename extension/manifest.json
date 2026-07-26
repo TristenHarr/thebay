@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "The Bay — Scrape Worker",
+  "version": "0.1.0",
+  "description": "Contribute event scraping to thebay.events from your own browser. Runs only when you turn it on.",
+  "permissions": ["storage", "alarms", "tabs", "scripting"],
+  "host_permissions": ["https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "The Bay — Scrape Worker" },
+  "content_scripts": [],
+  "icons": {}
+}

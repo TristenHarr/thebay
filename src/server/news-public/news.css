@@ -391,6 +391,10 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.6; }
 /* ── pagination ─────────────────────────────────────────────────────────────── */
 .pager { padding: 22px 0 8px; display: flex; gap: 12px; }
 
+/* How the page was ordered. Quiet on purpose — an explanation, not a boast, and it
+   must never compete with the stories it is explaining. */
+.rank-note { margin: 18px 0 4px; font-size: 12px; color: var(--muted); }
+
 /* ── small screens ──────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .wrap { padding: 0 16px; }
@@ -435,7 +439,7 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.6; }
 }
 
 @media print {
-  .masthead, .filters, .vote, .foot, .pager { display: none; }
+  .masthead, .filters, .vote, .foot, .pager, .rank-note { display: none; }
   body { background: #fff; color: #000; }
 }
 

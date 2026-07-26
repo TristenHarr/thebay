@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
+import { requireIngestToken } from "../middleware/bearer";
 import { PlacesRepo, RATIFY_VOTES, type PlaceWithKind } from "../../storage/d1/places-repo";
 import { requireAuth, optionalAuth } from "../../auth/middleware";
 import { inBay } from "../../core/geo";
@@ -230,9 +231,7 @@ export function placesRoutes(): App {
   // INGEST_TOKEN like every other admin endpoint. Idempotent on `external_ref`,
   // and — per the house source convention — bad rows are skipped and counted,
   // never a reason to fail the run.
-  app.post("/api/admin/places-import", async (c) => {
-    const token = c.env.INGEST_TOKEN;
-    if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+  app.post("/api/admin/places-import", requireIngestToken, async (c) => {
     const parsed = PlacesImportSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "bad payload", issues: parsed.error.issues.slice(0, 5) }, 400);
     const items = parsed.data.places.map((p) => ({

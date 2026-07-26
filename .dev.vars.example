@@ -7,6 +7,21 @@ INGEST_TOKEN=dev-ingest-token
 # "1" enables the passwordless dev quick-login (LOCAL ONLY — never set in prod)
 DEV_LOGIN=1
 
+# ── the scrape network (REQUIRED for it to work at all) ────────────────────────
+# HMAC key for the animated in-person handshake. Frame codes are derived from it and
+# never stored, so rotating it only invalidates the sessions currently on screen (they
+# live 30 seconds). Any long random string: `openssl rand -base64 32`.
+# UNSET ⇒ /api/net/invite and /api/net/join return 503. That is deliberate — joining
+# must never quietly fall back to a weaker check — but it means the network is inert
+# until this is set, and nothing else will tell you why.
+HANDSHAKE_KEY=dev-handshake-key-change-me
+
+# Comma-separated handles who moderate thebay.news AND are FOUNDING members of the
+# scrape network. This is the bootstrap: only trusted/core members can vouch for
+# somebody, `network_members` starts empty, so without at least one handle here nobody
+# can ever be admitted. The cron seeds these as `core` once they've signed in.
+ADMIN_HANDLES=
+
 # ── Optional integrations (features degrade gracefully when unset) ─────────────
 # Platform OpenRouter key — event tagging, vibe prediction, natural-language
 # search, identity-match ranking. Every one of those has a deterministic fallback,

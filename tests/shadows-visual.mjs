@@ -71,6 +71,32 @@ await step(`the MAP renders at a real size (height ≥ ${MAP_MIN_H}px)`, async (
   return !!mapBox && mapBox.height >= MAP_MIN_H && mapBox.width >= MAP_MIN_H;
 });
 
+// The unified map is layered (shadows / spots / … more each stage). No numbered
+// screenshot here so the CI comment's 01/02/05/06 references stay stable.
+await step("the layer switcher is present and toggles", async () => {
+  const chips = page.locator('[data-testid="map-layers"] .shadows-layer');
+  if ((await chips.count()) < 2) return false;
+  const spots = page.locator('[data-testid="map-layers"] .shadows-layer', { hasText: "Spots" });
+  const before = (await spots.getAttribute("class")) || "";
+  await spots.click();
+  await page.waitForTimeout(250);
+  const after = (await spots.getAttribute("class")) || "";
+  await spots.click(); // restore
+  console.log(`    layers: ${await chips.count()} · Spots toggled ${before.includes("is-on")}→${after.includes("is-on")}`);
+  return before.includes("is-on") && !after.includes("is-on"); // clicking turned it off
+});
+
+await step("mobbing toggles on and tracks movement (no numbered shot)", async () => {
+  const toggle = page.locator('[data-testid="mob-toggle"]');
+  if (!(await toggle.count())) return false;
+  await toggle.click();
+  await page.waitForTimeout(700);
+  const on = await page.locator('[data-testid="mob-indicator"]').count();
+  await toggle.click(); // back off so it doesn't ping during the rest of the run
+  console.log(`    mobbing indicator shown: ${on > 0}`);
+  return on > 0;
+});
+
 await step("casting a shadow from the composer works", async () => {
   const before = (await (await ctx.request.get(`${B}/api/me`)).json()).points ?? 0;
   await page.locator(".shadows-cast").click(); // "✦ Cast a shadow"
@@ -92,6 +118,22 @@ await step("the cast shadow shows up as a live pin", async () => {
   await snap("live-pin");
   console.log(`    live pins: ${pins}`);
   return pins >= 1;
+});
+
+// XP orbs are deterministic per cell — zoomed in on a live cell, at least one floats.
+await step("XP orbs float on the map (no numbered shot)", async () => {
+  await page.waitForTimeout(600);
+  const orbs = await page.locator(".orb-marker").count();
+  console.log(`    orbs rendered: ${orbs}`);
+  return orbs >= 1;
+});
+
+// The lore layer (SF-VC landmark billboards) + the coming-soon vision banner.
+await step("lore billboards + P2P-mesh banner render (no numbered shot)", async () => {
+  const lore = await page.locator(".lore-marker").count();
+  const banner = await page.locator('[data-testid="mesh-banner"]').count();
+  console.log(`    lore markers: ${lore} · mesh banner: ${banner}`);
+  return lore >= 1 && banner >= 1;
 });
 
 await step("expanding the widget grows it", async () => {

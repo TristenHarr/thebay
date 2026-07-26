@@ -9,7 +9,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { CanonicalEvent } from "../core/models/event";
-import type { EventFilter } from "../storage/repository";
 import { D1Repo } from "../storage/d1/d1-repo";
 import { GraphRepo } from "../storage/d1/graph-repo";
 import { ShadowsRepo } from "../storage/d1/shadows-repo";
@@ -17,6 +16,7 @@ import { IngestPayloadSchema, GeocodePayloadSchema, ScrapeReportSchema } from ".
 import type { Env, Vars } from "./env";
 import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-types";
 import { routeFactories } from "./routes";
+import { requireIngestToken } from "./middleware/bearer";
 import { harden } from "./security";
 import { apexRedirectUrl } from "./origin";
 import citiesJson from "../../config/cities.json";
@@ -26,32 +26,16 @@ import { UNKNOWN_CITY } from "../core/models/source";
 import categoriesJson from "../../config/categories.json";
 import { KeywordTagger } from "../ai/keyword-tagger";
 import { enrichSlice } from "./routes/search";
+import { parseFilter } from "./event-filter";
+import { RankRepo } from "../storage/d1/rank-repo";
+import { rankTick } from "../core/rank/train";
+import { ScrapeNetRepo } from "../storage/d1/scrape-net-repo";
+import { recipeHost } from "../core/scrape/host";
+import { seedFoundingMembers, refreshRobots } from "./net-tick";
+import sourcesJson from "../../config/sources.json";
 
 export { GroupRoom } from "../realtime/group-room";
 export { ShadowCell } from "../realtime/shadow-cell";
-
-function parseFilter(q: Record<string, string>): EventFilter {
-  const list = (v?: string) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : undefined);
-  const num = (v?: string) => (v != null && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : undefined);
-  const truthy = (v?: string) => v === "1" || v === "true";
-  let from = q.from;
-  if (!from && !truthy(q.past)) from = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
-  return {
-    from: from || undefined,
-    to: q.to || undefined,
-    cities: list(q.city),
-    categories: list(q.category),
-    sources: list(q.source),
-    free: truthy(q.free) ? true : undefined,
-    minScore: num(q.minScore),
-    q: q.q || undefined,
-    starred: truthy(q.starred) ? true : undefined,
-    includeHidden: truthy(q.includeHidden),
-    sort: q.sort === "score" ? "score" : "start",
-    limit: num(q.limit),
-    offset: num(q.offset),
-  };
-}
 
 const app = new Hono<{ Bindings: Env; Variables: Partial<Vars> }>();
 
@@ -114,9 +98,7 @@ app.get("/api/events.json", async (c) => {
 });
 
 // ── admin ingest (bearer-gated) ────────────────────────────────────────────────
-app.post("/api/admin/ingest", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/ingest", requireIngestToken, async (c) => {
   const parsed = IngestPayloadSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "bad payload", issues: parsed.error.issues.slice(0, 5) }, 400);
   const result = await new D1Repo(c.env.DB).upsertEvents(parsed.data.events as CanonicalEvent[]);
@@ -125,9 +107,7 @@ app.post("/api/admin/ingest", async (c) => {
 
 // Record a scrape run (the local push calls this after ingesting) so production
 // gets the run history + freshness that plain event-ingest can't convey. Bearer-gated.
-app.post("/api/admin/scrape-report", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/scrape-report", requireIngestToken, async (c) => {
   const parsed = ScrapeReportSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "bad report", issues: parsed.error.issues.slice(0, 5) }, 400);
   return c.json({ ok: true, runId: await new D1Repo(c.env.DB).recordRun(parsed.data) });
@@ -136,9 +116,7 @@ app.post("/api/admin/scrape-report", async (c) => {
 // Re-resolve every event's city + fingerprint against the current cities.json and
 // dedup in place. Run after the alias set changes so newly-matchable events don't
 // re-insert as duplicates on the next scrape. Bearer-gated.
-app.post("/api/admin/renormalize", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/renormalize", requireIngestToken, async (c) => {
   const resolve = makeCityResolver(citiesJson as any);
   const result = await new D1Repo(c.env.DB).renormalizeCities((e) => resolve(e.city, e.address, e.venueName)?.id ?? UNKNOWN_CITY);
   return c.json({ ok: true, ...result });
@@ -146,33 +124,25 @@ app.post("/api/admin/renormalize", async (c) => {
 
 // Drop confidently out-of-region events (other US states / countries) that leaked
 // in via location search. Bearer-gated. Precision-first — see looksOutOfRegion.
-app.post("/api/admin/prune-out-of-region", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/prune-out-of-region", requireIngestToken, async (c) => {
   return c.json({ ok: true, ...(await new D1Repo(c.env.DB).pruneOutOfRegion(looksOutOfRegion)) });
 });
 
 // Re-tag the whole catalog (REPLACING categories) with the current keyword tagger.
 // Run after the tagger changes — ingest's merge unions categories, so it can add a
 // tag but never remove a stale one. Bearer-gated.
-app.post("/api/admin/retag", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/retag", requireIngestToken, async (c) => {
   return c.json({ ok: true, ...(await new D1Repo(c.env.DB).retagAll(new KeywordTagger(categoriesJson as any))) });
 });
 
 // Run warm-intros autopilot on demand (same work the cron does). Bearer-gated so
 // only the operator can trigger it; the scheduled handler runs it automatically.
-app.post("/api/admin/run-autopilot", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/run-autopilot", requireIngestToken, async (c) => {
   return c.json({ ok: true, ...(await new GraphRepo(c.env.DB).runIntroAutopilot()) });
 });
 
 // Backfill event coordinates (from the local geocoder). Bearer-gated.
-app.post("/api/admin/geocode", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/geocode", requireIngestToken, async (c) => {
   const parsed = GeocodePayloadSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "bad payload" }, 400);
   const stmts = parsed.data.items.map((i) =>
@@ -188,6 +158,16 @@ for (const make of routeFactories) app.route("/", make());
 // ── the /app SPA (history-routed) ──────────────────────────────────────────────
 // /app → /app/; any /app/* path without a file extension is a client route and
 // serves the shell; real asset files (…/assets/x.js) fall through to ASSETS.
+/**
+ * The handshake's short link. Every frame of the animated in-person code encodes
+ * `https://thebay.events/j#s=…&t=…&c=…`, kept short so the QR stays low-density enough for a
+ * phone camera to read at 400ms per frame.
+ *
+ * A 302 with no fragment of its own preserves the original fragment, so a stranger whose stock
+ * camera app catches ONE frame still lands on the scanner with that frame in hand. One frame is
+ * never enough to get in (the server wants four consecutive), but it is enough to get started.
+ */
+app.get("/j", (c) => c.redirect("/app/handshake", 302));
 app.get("/app", (c) => c.redirect("/app/", 302));
 app.get("/app/*", (c) => {
   const url = new URL(c.req.url);
@@ -207,8 +187,73 @@ export default {
     ctx.waitUntil(new GraphRepo(env.DB).runIntroAutopilot());
     ctx.waitUntil(sweepExpiredShadows(env)); // GC shadows past their 24h + their media
     ctx.waitUntil(enrichTick(env)); // tag + embed the next slice of freshly-scraped events
+    ctx.waitUntil(rankLearnTick(env)); // label yesterday's impressions, retrain, maybe promote
+    ctx.waitUntil(scrapeNetTick(env)); // seed recipes, plan this window's jobs, reclaim dead leases
   },
 };
+
+/**
+ * Cron slice of the scrape network: keep the work queue true.
+ *
+ * All three steps are idempotent, which is what makes running them on every 15-minute
+ * tick correct rather than wasteful. `seedRecipes` is `INSERT OR IGNORE` on
+ * (source_id, version) — it exists so a fresh deployment bootstraps itself from
+ * config/sources.json without anyone remembering to run a script, and it never clobbers
+ * a live edit or resurrects a retired source. `plan` is `INSERT OR IGNORE` on
+ * (recipe_id, window_start), so ticking four times an hour inside a six-hour window
+ * creates nothing after the first. `expireLeases` reclaims work from clients that went
+ * away — a closed laptop must not hold a source hostage.
+ *
+ * Errors are swallowed like every other tick's: a throw here would take the autopilot,
+ * the shadow sweep, enrichment and the ranking loop down with it, and a skipped round
+ * costs nothing the next tick doesn't recover.
+ */
+async function scrapeNetTick(env: Env): Promise<void> {
+  try {
+    const net = new ScrapeNetRepo(env.DB);
+    // Without this the network can never admit its first member: only trusted/core may vouch,
+    // and `network_members` starts empty. Config founds it; humans grow it from there.
+    await seedFoundingMembers(env);
+    await net.seedRecipes(sourcesJson as any, recipeHost);
+    // Ask each host how it wants to be crawled, before crawling it.
+    await refreshRobots(env);
+    // The scrapers' release cycle: proposals enter shadow, shadows get judged, winners go
+    // live. No deploy, no migration, and every decision logged in `recipe_audits`.
+    // Idempotent like the rest — `auditVerdict` returns `keep` until the evidence is real,
+    // so running this every 15 minutes simply means a candidate is promoted promptly on the
+    // pass where it finally qualifies rather than up to a day later.
+    await net.promoteProposals();
+    await net.auditShadows();
+    await net.plan();
+    await net.expireLeases();
+  } catch {
+    /* best-effort — the queue is re-derived from scratch on the next tick */
+  }
+}
+
+/**
+ * Cron slice of the ranking learning loop: label settled impressions, retrain each
+ * surface, and promote only what beat the incumbent on a held-out slice.
+ *
+ * Runs on the same 15-minute tick as everything else, which is far more often than the
+ * model can meaningfully change — and that is fine, because it is idempotent and cheap:
+ * with too little data it returns "waiting for data" without writing anything, and with
+ * enough data the promotion gate rejects a candidate that isn't better. The frequency
+ * buys freshness of LABELS (which arrive continuously) rather than of weights.
+ *
+ * Errors are swallowed for the same reason the other ticks swallow theirs: a throw here
+ * would take the autopilot, the shadow sweep and enrichment down with it, and a missed
+ * training round costs nothing that the next tick doesn't recover.
+ */
+async function rankLearnTick(env: Env): Promise<void> {
+  try {
+    const repo = new RankRepo(env.DB);
+    await rankTick(repo);
+    await repo.gc(); // retention is enforced by the same tick that creates the data
+  } catch {
+    /* best-effort — impressions stay unlabelled and the next tick picks them up */
+  }
+}
 
 /**
  * Cron slice of tag/embed enrichment. Deliberately small: the scraper pushes in

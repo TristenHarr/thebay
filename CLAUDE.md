@@ -11,8 +11,11 @@ Workers in one repo (see ARCHITECTURE.md → "Two sites, one repo"):
 - **thebay.events** — the events app + API + social platform. Worker entry `src/worker/index.ts`; React app in `web/`; static dashboard built by the CLI.
 - **thebay.news** — a server-rendered Bay-native news site. Config `wrangler.news.jsonc`.
 
-The public events catalog is produced by a **local scraper** (Eventbrite blocks
-datacenter IPs) that pushes into production D1 over an authenticated ingest endpoint.
+The public events catalog is produced two ways. The original: a **local scraper** (Eventbrite
+blocks datacenter IPs) pushing into production D1 over an authenticated ingest endpoint. The
+new one: a **distributed scrape network** of members running the same scrapers from their own
+machines and browsers, whose results are cross-checked before anything publishes — see
+"The scrape network" below.
 
 ## The one rule: `npm run verify` is the gate
 
@@ -55,6 +58,47 @@ npm run schedule:install   # macOS launchd: run daily at 08:00 (schedule:status/
 Observability: `GET /api/scrape-status` (public — last run, totals, `stale` flag) and
 `GET /api/runs`. Every `push` records a run via `POST /api/admin/scrape-report`.
 
+## The scrape network (distributed → prod)
+
+Members scrape on the catalog's behalf; the coordinator decides who scrapes what, how often,
+and whether to believe them. Migrations `0023` (identity) + `0025` (work queue) + `0029` (audits).
+
+```bash
+npm run work              # BAY_WORKER_TOKEN=… npm run work -- --url https://thebay.events
+npm run build:extension   # Chrome extension → dist/extension (Load unpacked)
+curl /api/net/status      # is the network alive? (see DEPLOY.md § 4b)
+```
+
+**Requires two secrets or it is completely inert:** `HANDSHAKE_KEY` (joining 503s without it)
+and `ADMIN_HANDLES` (founding members — without one, nobody can ever be admitted).
+
+The five things to understand before changing any of it:
+
+1. **Volunteers submit `RawEvent[]`; the server derives canon.** `/api/net/submit` normalizes,
+   fingerprints and dedups with `src/core/**`. A client cannot choose which existing event its
+   data merges into, because it never computes the key. (Contrast `/api/admin/ingest`, which
+   trusts a client-supplied `fingerprint` — fine for the operator's own machine, not for anyone
+   else.)
+2. **Politeness is a lease policy, not a client-side sleep.** `HOST_MIN_GAP_MS` is an in-memory
+   Map and does not survive distribution, so the coordinator withholds work instead. The gap is
+   enforced by an atomic conditional `UPDATE` on `scrape_hosts` — D1 has no `SELECT … FOR
+   UPDATE`, so reading-then-deciding would let two workers both be handed the same host.
+   robots.txt is fetched by cron (`src/worker/net-tick.ts`) and enforced at lease time.
+3. **Independence is measured by egress, not by account.** Two accounts behind one NAT are one
+   observer; their agreement is not consensus.
+4. **You are never punished for being alone.** `pending` costs nothing. Only a *contradiction*
+   — an independent worker with a demonstrably overlapping view who didn't see it — moves
+   reputation, and a later confirmation refunds it. Standing is RECOMPUTED from observations, so
+   refunds are free.
+5. **Scrapers improve as data, never as shipped code.** A recipe is `{ type, params }` for an
+   adapter already in `src/sources/registry.ts`, validated by that adapter's own `parseParams`.
+   Candidates run in shadow beside the incumbent and are promoted only by
+   `src/core/scrape/audit.ts`. Every verdict is logged in `recipe_audits` and reversible.
+
+Entry is an **in-person handshake**: the ambassador's phone plays an HMAC-derived code at 400ms
+and the joiner must capture four consecutive frames (`src/core/net/handshake.ts`). No secret is
+stored server-side. That gate is the anti-Sybil primitive; consensus is the second layer.
+
 ## Admin endpoints (all bearer-gated with `INGEST_TOKEN`)
 
 | Endpoint | Purpose |
@@ -69,6 +113,12 @@ Observability: `GET /api/scrape-status` (public — last run, totals, `stale` fl
 | `POST /api/admin/tags` | add/edit `tag_vocab` rows — a new tag is a row, not a redeploy |
 | `POST /api/admin/run-autopilot` | warm-intros autopilot (also on a cron) |
 | `POST /api/admin/geocode` | backfill coordinates |
+
+The check itself lives in **one** place: `requireIngestToken` / `ingestTokenOk` in
+`src/worker/middleware/bearer.ts`. It was copy-pasted thirteen times with a non-constant-time
+`!==`; `tests/net-guards.test.ts` fails if a fourteenth copy appears. Volunteers never get this
+token — they get a per-device worker token scoped to `/api/net/*`
+(`src/worker/middleware/worker-token.ts`).
 
 ## Gotchas that will bite you
 

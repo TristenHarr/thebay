@@ -27,6 +27,12 @@ export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
 
   INGEST_TOKEN?: string;
+  /** HMAC key for the scrape network's animated in-person handshake
+   *  (src/core/net/handshake.ts). Frame codes are derived from it, never stored, so
+   *  rotating it only invalidates sessions in flight (they live 30 seconds).
+   *  Absent ⇒ /api/net/invite and /api/net/join 503: joining is the one thing that
+   *  must not degrade to a weaker check when a secret is missing. */
+  HANDSHAKE_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
@@ -64,6 +70,17 @@ export interface Env {
    *  loop is a billing incident, so this is enforced in `completeJson`, not at
    *  call sites. */
   LLM_DAILY_BUDGET_USD?: string;
+  /**
+   * Fraction of personalized feed renders whose head is randomized so the ranker can
+   * learn from something other than its own prior (see `core/rank/explore.ts`).
+   * Absent ⇒ `DEFAULT_EPSILON`. `"0"` turns exploration off entirely.
+   *
+   * A dial rather than a constant because it is the one part of the loop an operator may
+   * need to change without a deploy: up during a cold start when there is nothing to
+   * learn from, and straight to zero if a shuffled front page is ever the wrong thing to
+   * be doing. Tests also pin it to 0 so an assertion about ordering is not a coin flip.
+   */
+  RANK_EPSILON?: string;
   /** Semantic event search. Typed structurally for the same reason AI/ASSETS are —
    *  `@cloudflare/workers-types` is not ambient here (tsconfig `types: ["node"]`).
    *  Absent ⇒ search degrades to FTS5 + keyword, which is still a big upgrade. */
@@ -93,4 +110,9 @@ export interface Env {
 }
 
 /** Hono context variables set by auth middleware. */
-export type Vars = { user: User };
+export type Vars = {
+  user: User;
+  /** Set by `requireHost()` — the event the caller was just authorized to host, so a
+   *  handler need not re-query what the middleware already resolved. */
+  hostEventId: string;
+};

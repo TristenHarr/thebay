@@ -69,6 +69,46 @@ Bound in `wrangler.jsonc` (`"ai": { "binding": "AI" }`). No secret needed; it ju
 works on deploy. The AI brief and networking agent already produce their full
 deterministic output without it — AI only rephrases the prose.
 
+## 4b. The scrape network — REQUIRED for volunteer scraping
+
+Two settings, and the network is completely inert without them. Both fail silently in
+different ways, so set them before wondering why nothing works.
+
+```bash
+# HMAC key for the animated in-person handshake. Frame codes derive from it and are never
+# stored, so rotating it only kills the sessions currently on screen (they live 30s).
+openssl rand -base64 32 | npx wrangler secret put HANDSHAKE_KEY
+
+# Founding members. Only trusted/core members can vouch for someone, and network_members
+# starts EMPTY — so without at least one handle here, nobody can ever be admitted and the
+# first handshake 403s forever. The cron seeds these handles as `core` once they sign in.
+npx wrangler secret put ADMIN_HANDLES     # e.g. ann,raj
+```
+
+Check both landed, and that the network is alive:
+
+```bash
+curl -s https://thebay.events/api/net/status | jq
+# { "handshakeConfigured": true, "members": 1, "workers": 0,
+#   "recipes": { "active": 22, ... }, "jobs": { "open": 22 }, "hosts": { "robotsChecked": 9 } }
+```
+
+`handshakeConfigured: false` means `HANDSHAKE_KEY` is missing — joining will 503.
+`members: 0` after the named handles have signed in means the cron hasn't run yet (it is on
+the 15-minute trigger, same as everything else).
+
+**Then onboard a volunteer:** they sign in, you meet them, you open `/app/handshake` → Show,
+they open it → Scan. They register a worker in `/app/contribute` and then either:
+
+- **clone the repo** and run `BAY_WORKER_TOKEN=… npm run work -- --url https://thebay.events`
+  (this package is `private: true`, so `npx thebay-worker` needs a publish first — `bin/thebay-worker.mjs`
+  is the entry point when you're ready to make that call), or
+- **load the Chrome extension**: `npm run build:extension`, then `chrome://extensions` →
+  Developer mode → Load unpacked → `dist/extension`. A real browser on a real residential
+  connection, which is the whole point — it gets the sources that refuse a datacenter IP.
+
+Nothing about this hands out `INGEST_TOKEN`. Worker tokens reach `/api/net/*` only.
+
 ## 5. Native apps (Capacitor) — later phase
 
 `capacitor.config.ts` targets the same `dist/site/app` build. When ready:

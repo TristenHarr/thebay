@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useGetEventFullQuery, useRsvpMutation, useReviewEventMutation, useGetEventMediaQuery, useGetResearchQuery } from "../../api";
+import { useGetEventAffinityQuery } from "../../api";
 import { Card, Avatar, Chip, Button, Spinner, PageHeader, Badge, EventThumb, input } from "../../ui/kit";
 import { fmtDate } from "../feed/Feed";
 import { mediaUrl } from "../media/Media";
@@ -28,6 +29,7 @@ export function EventPage({ me }: { me: any }) {
   return (
     <div data-testid="event-page">
       <EventThumb event={e} className="mb-4 h-56 w-full rounded-lg object-cover" glyph={72} />
+      {me && <AffinityStrip eventId={id} />}
       <h1 className="text-2xl font-bold tracking-tight" style={{ textWrap: "balance" } as any}>{e.title}</h1>
       <div className="mt-1 font-mono text-sm text-muted">{fmtDate(e.startUtc, e.timezone)}{e.venueName ? ` · ${e.venueName}` : ""}</div>
       {data.host && (
@@ -191,6 +193,39 @@ export function ReviewPage() {
           Submit review
         </Button>
       </Card>
+    </div>
+  );
+}
+
+
+const BAND_STYLE: Record<string, string> = {
+  home: "border-ok/50 text-ok",
+  welcome: "border-accent/50 text-accent",
+  neutral: "border-border text-muted",
+  stretch: "border-warn/50 text-warn",
+};
+
+/**
+ * "Is this room mine?"
+ *
+ * The archetype comes from the same classifier the vibe card uses, and the crowd mixes behind
+ * the verdict are that predictor's own — so this is grounded in 8,433 real events rather than
+ * a designer's hunch about who goes to hackathons.
+ *
+ * Renders nothing until you've declared a type, because a shrug helps nobody.
+ */
+function AffinityStrip({ eventId }: { eventId: string }) {
+  const { data } = useGetEventAffinityQuery(eventId);
+  if (!data?.declared || !data.archetype) return null;
+  return (
+    <div className={`mb-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs ${BAND_STYLE[data.band] ?? BAND_STYLE.neutral}`} data-testid="event-affinity">
+      <span className="font-semibold">{data.label}</span>
+      <span className="text-muted">· usually a {String(data.archetype).replace(/-/g, " ")} crowd</span>
+      {data.missing?.length > 0 && (
+        <span className="text-muted">
+          · short on {data.missing.map((m: any) => `${m.emoji} ${m.label}`).join(", ")}
+        </span>
+      )}
     </div>
   );
 }

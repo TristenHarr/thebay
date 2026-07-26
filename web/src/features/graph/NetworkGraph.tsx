@@ -20,21 +20,55 @@ export function NetworkGraph() {
   const hoverRef = useRef<string | null>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
 
-  // Build a stable simulation model from the fetched graph. Seed positions on a
-  // ring (deterministic-ish jitter from the index) so the layout is reproducible.
+  /**
+   * Build the simulation model, seeding positions by CONNECTIVITY rather than by array index.
+   *
+   * The old seeding placed nodes on one ring in `data.nodes` order, which is the order the SQL
+   * happened to return. That is uncorrelated with who is connected to whom, so the sim starts
+   * from a maximally-crossed state and has to untangle it — and with `alpha *= 0.994` flooring
+   * at 0.02 (~640 frames, ~11s) it COOLS BEFORE IT UNTANGLES. The user sees a permanent knot
+   * and concludes the graph is broken. It was the first visible symptom, well before the O(n²)
+   * repulsion became a performance problem.
+   *
+   * Seeding neighbours near each other instead means the sim starts close to a solution and
+   * only has to relax. High-degree nodes go on an inner ring (hubs belong in the middle), and
+   * each node is nudged toward the mean angle of its already-placed neighbours.
+   */
   const model = useMemo(() => {
     const raw = data?.nodes || [];
-    const n = raw.length;
-    const nodes: Node[] = raw.map((d: any, i: number) => {
-      const a = (i / Math.max(1, n)) * Math.PI * 2;
-      return { id: d.id, name: d.name || d.handle || "—", handle: d.handle, me: d.me, x: Math.cos(a) * 140 + Math.sin(i * 7.13) * 20, y: Math.sin(a) * 140 + Math.cos(i * 3.7) * 20, vx: 0, vy: 0 };
-    });
-    const idx = new Map(nodes.map((nd) => [nd.id, nd]));
-    const edges: Edge[] = (data?.edges || []).filter((e: any) => idx.has(e.a) && idx.has(e.b));
+    const rawEdges = (data?.edges || []) as Array<{ a: string; b: string }>;
+
     const degree = new Map<string, number>();
-    for (const e of edges) { degree.set(e.a, (degree.get(e.a) || 0) + 1); degree.set(e.b, (degree.get(e.b) || 0) + 1); }
+    for (const e of rawEdges) {
+      degree.set(e.a, (degree.get(e.a) || 0) + 1);
+      degree.set(e.b, (degree.get(e.b) || 0) + 1);
+    }
     const adj = new Map<string, Set<string>>();
-    for (const e of edges) { (adj.get(e.a) || adj.set(e.a, new Set()).get(e.a)!).add(e.b); (adj.get(e.b) || adj.set(e.b, new Set()).get(e.b)!).add(e.a); }
+    for (const e of rawEdges) {
+      (adj.get(e.a) || adj.set(e.a, new Set()).get(e.a)!).add(e.b);
+      (adj.get(e.b) || adj.set(e.b, new Set()).get(e.b)!).add(e.a);
+    }
+
+    // Most-connected first, so hubs are placed before the nodes that hang off them.
+    const order = [...raw].sort((x: any, y: any) => (y.me ? 1 : 0) - (x.me ? 1 : 0) || (degree.get(y.id) || 0) - (degree.get(x.id) || 0));
+    const maxDeg = Math.max(1, ...order.map((d: any) => degree.get(d.id) || 0));
+    const angle = new Map<string, number>();
+    const nodes: Node[] = order.map((d: any, i: number) => {
+      const placed = [...(adj.get(d.id) || [])].map((nb) => angle.get(nb)).filter((a): a is number => a !== undefined);
+      // Sit near your neighbours if any are down already; otherwise take a golden-angle slot,
+      // which spreads the unconstrained nodes evenly instead of clumping them.
+      const a = placed.length
+        ? Math.atan2(placed.reduce((s, x) => s + Math.sin(x), 0) / placed.length, placed.reduce((s, x) => s + Math.cos(x), 0) / placed.length) +
+          (i % 2 ? 0.35 : -0.35)
+        : i * 2.399963;
+      angle.set(d.id, a);
+      // Hubs inward, leaves outward.
+      const r = d.me ? 0 : 200 - 110 * ((degree.get(d.id) || 0) / maxDeg);
+      return { id: d.id, name: d.name || d.handle || "—", handle: d.handle, me: d.me, x: Math.cos(a) * r, y: Math.sin(a) * r, vx: 0, vy: 0 };
+    });
+
+    const idx = new Map(nodes.map((nd) => [nd.id, nd]));
+    const edges: Edge[] = rawEdges.filter((e: any) => idx.has(e.a) && idx.has(e.b)) as Edge[];
     return { nodes, edges, idx, degree, adj };
   }, [data]);
 

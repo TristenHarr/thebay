@@ -1,6 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { ulid } from "ulid";
 import { POINTS } from "../../../shared/schema";
+import { GraphProjection } from "./graph-projection";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
@@ -269,6 +270,34 @@ export class GraphRepo {
       )
       .run();
   }
+  /**
+   * Read back your own matching preferences.
+   *
+   * `PUT /api/match/prefs` has existed since the matching screen shipped and there was NO read
+   * path — so the form could not repopulate, and `interests_json` was written by a live UI and
+   * consumed by nothing in the entire codebase. That is also why `founderStats`' `capital` and
+   * `technical` axes were always zero in production: their only input was this column.
+   */
+  async matchPrefs(userId: string): Promise<{ hasIdea: boolean | null; technical: boolean | null; commitment: string | null; radiusKm: number | null; interests: string[]; looking: boolean } | null> {
+    const r = await this.db.prepare("SELECT * FROM match_prefs WHERE user_id = ?").bind(userId).first<Row>();
+    if (!r) return null;
+    let interests: string[] = [];
+    try {
+      const v = JSON.parse(r.interests_json || "[]");
+      if (Array.isArray(v)) interests = v.filter((x: unknown): x is string => typeof x === "string");
+    } catch {
+      // A corrupt row must not break the form that would let somebody fix it.
+    }
+    return {
+      hasIdea: r.has_idea == null ? null : !!r.has_idea,
+      technical: r.technical == null ? null : !!r.technical,
+      commitment: r.commitment ?? null,
+      radiusKm: r.radius_km ?? null,
+      interests,
+      looking: !!r.looking,
+    };
+  }
+
   async deck(userId: string): Promise<Array<{ id: string; displayName: string; handle: string; bio: string | null; technical: boolean; hasIdea: boolean; commitment: string | null }>> {
     const res = await this.db
       .prepare(
@@ -425,27 +454,25 @@ export class GraphRepo {
     return rows;
   }
 
-  /** Your ego network: you + friends + the friendship edges among them. Powers the
-   *  interactive network-graph visualization. */
+  /**
+   * Your ego network in the LEGACY shape — a two-line delegate to `GraphProjection`.
+   *
+   * The old hand-rolled version is gone so there is exactly one implementation of "who is in
+   * my graph", and therefore exactly one place the visibility rules live. That matters: the
+   * projection enforces the `blocked` hard cut and the hop-1-only friend exemption, and this
+   * query enforced neither.
+   *
+   * The response shape is preserved byte-for-byte (`{id, name, handle, me}` with bare user
+   * ids, and `{a, b}` friendship edges) because `web/src/features/graph/NetworkGraph.tsx`
+   * renders from it. New callers should use `GraphProjection.ego` directly and get types,
+   * evidence and coordinates.
+   */
   async networkGraph(userId: string): Promise<{ nodes: any[]; edges: any[] }> {
-    const fr = await this.db
-      .prepare(`SELECT CASE WHEN user_low=? THEN user_high ELSE user_low END AS id FROM friendships WHERE (user_low=? OR user_high=?) AND status='accepted'`)
-      .bind(userId, userId, userId)
-      .all<{ id: string }>();
-    const uniq = [...new Set([userId, ...(fr.results ?? []).map((r) => r.id)])];
-    const ph = uniq.map(() => "?").join(",");
-    const nodesRes = await this.db.prepare(`SELECT id, display_name AS name, handle FROM users WHERE id IN (${ph})`).bind(...uniq).all<Row>();
-    // Both sides must be inside the ego-net, so filter the chunked result rather
-    // than binding `uniq` twice in one statement (see edgesTouching).
-    const inNet = new Set(uniq);
-    const edgesRes = {
-      results: (await this.edgesTouching(uniq))
-        .filter((e) => inNet.has(e.user_low) && inNet.has(e.user_high))
-        .map((e) => ({ a: e.user_low, b: e.user_high })),
-    };
+    const r = await new GraphProjection(this.db).ego({ viewerId: userId, hops: 1, include: ["friendship"] });
+    const bare = (id: string) => id.replace(/^user:/, "");
     return {
-      nodes: (nodesRes.results ?? []).map((n) => ({ id: n.id, name: n.name, handle: n.handle, me: n.id === userId })),
-      edges: edgesRes.results ?? [],
+      nodes: r.nodes.filter((n) => n.type === "user").map((n) => ({ id: bare(n.id), name: n.label, handle: n.handle, me: !!n.me })),
+      edges: r.edges.filter((e) => e.kind === "friendship").map((e) => ({ a: bare(e.a), b: bare(e.b) })),
     };
   }
 

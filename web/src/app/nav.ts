@@ -51,31 +51,41 @@ export const SECTIONS: NavSection[] = [
     id: "discover",
     label: "Discover",
     to: "/discover",
-    owns: ["/", "/discover", "/event", "/map", "/itinerary", "/host"],
+    owns: ["/", "/discover", "/event", "/map", "/itinerary", "/host", "/gyms"],
     items: [
       { to: "/discover", label: "Feed", hint: "Search and browse every Bay event" },
       { to: "/map", label: "Map", hint: "Events on a map" },
       { to: "/itinerary", label: "Itinerary", auth: true, hint: "What you've RSVP'd to" },
       { to: "/host", label: "Host", auth: true, hint: "Post your own event" },
+      // Sits next to Host because it is the other half of the same job: you post an
+      // event, then you run its gym.
+      { to: "/gyms", label: "Gyms", auth: true, hint: "Run your events as gyms — award XP to who showed up" },
     ],
   },
   {
     id: "city",
     label: "City",
     to: "/city",
-    owns: ["/city", "/nav", "/board"],
+    owns: ["/city", "/nav", "/board", "/crawls"],
     items: [
       { to: "/city", label: "Places", hint: "Parking, wifi and crowd-sourced spots" },
       { to: "/nav", label: "Walk", hint: "Offline map and walking directions" },
+      // A crawl is a route through the city with checkpoints, so it lives beside Walk.
+      { to: "/crawls", label: "Crawls", auth: true, hint: "Multi-venue routes with checkpoints" },
     ],
   },
   {
     id: "people",
     label: "People",
     to: "/friends",
-    owns: ["/people", "/network", "/friends", "/groups", "/group", "/intros", "/mentors", "/match", "/communities", "/community", "/u"],
+    owns: ["/people", "/network", "/friends", "/groups", "/group", "/intros", "/mentors", "/match", "/communities", "/community", "/u", "/handshake", "/pokedex"],
     items: [
       { to: "/friends", label: "Friends", auth: true, hint: "Your connections", owns: ["/friends", "/u"] },
+      // First-class, because meeting somebody in person is the one thing this app is for —
+      // and it is also the only door into the scrape network.
+      { to: "/handshake", label: "Handshake", auth: true, hint: "Connect in person — show a moving code, or scan theirs" },
+      // The collection of people you've met in person, so it belongs beside Handshake.
+      { to: "/pokedex", label: "Pokédex", auth: true, hint: "Founders you've caught, and their stat cards" },
       { to: "/groups", label: "Groups", auth: true, hint: "Group chat", owns: ["/groups", "/group"] },
       { to: "/intros", label: "Intros", auth: true, hint: "Warm intros" },
       { to: "/mentors", label: "Mentors", auth: true, hint: "Find or offer mentorship" },
@@ -87,26 +97,32 @@ export const SECTIONS: NavSection[] = [
     id: "signal",
     label: "Signal",
     to: "/impact",
-    owns: ["/signal", "/impact", "/companies", "/company", "/leaderboard", "/network-graph"],
+    owns: ["/signal", "/impact", "/companies", "/company", "/leaderboard", "/network-graph", "/graph-map"],
     items: [
       { to: "/impact", label: "Impact", hint: "Which intros and events led somewhere" },
       { to: "/companies", label: "Companies", hint: "Companies and funding rounds", owns: ["/companies", "/company"] },
       { to: "/leaderboard", label: "Rankings", hint: "Leaderboards" },
       { to: "/network-graph", label: "Graph", auth: true, hint: "Your network, drawn" },
+      // The same projection, anchored to real venues instead of laid out abstractly.
+      { to: "/graph-map", label: "Map", auth: true, hint: "Your network drawn over the real Bay" },
     ],
   },
   {
     id: "me",
     label: "Me",
     to: "/me",
-    owns: ["/me", "/goals", "/achievements", "/media", "/integrations", "/agent"],
+    owns: ["/me", "/goals", "/achievements", "/media", "/integrations", "/agent", "/contribute", "/identity"],
     items: [
       { to: "/me", label: "Profile", auth: true },
       { to: "/goals", label: "Goals", auth: true, hint: "What you're here to do" },
       { to: "/achievements", label: "Achievements", auth: true },
+      // What you are + your card. Next to Achievements because both answer "what does my
+      // record look like to somebody else".
+      { to: "/identity", label: "Card", auth: true, hint: "Your founder type and stat card" },
       { to: "/media", label: "Moments", auth: true, hint: "Your photos and video" },
       { to: "/integrations", label: "Integrations", auth: true, hint: "Luma, Eventbrite, calendar, LinkedIn" },
       { to: "/agent", label: "Agent", auth: true, hint: "AI networking agent settings" },
+      { to: "/contribute", label: "Contribute", auth: true, hint: "Run a scraper for the catalog and see your standing" },
     ],
   },
 ];

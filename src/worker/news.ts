@@ -30,8 +30,12 @@ import { ModerationRepo } from "../storage/d1/moderation-repo";
 import { requireAdmin, isAdmin } from "../auth/admin";
 import { attestLocation, hasAttestation } from "../news/attest";
 import { LIMITS, rateVerdict, waitMessage, type Limit } from "../news/ratelimit";
+import { requireIngestToken } from "./middleware/bearer";
 import { NewsFilterSchema, StorySubmitSchema, CommentCreateSchema, GeoAttestSchema } from "../../shared/schema";
-import { html, raw, toHtml } from "../news/render/escape";
+import { RankRepo } from "../storage/d1/rank-repo";
+import { emptyFeatures } from "../core/rank/features";
+import { epsilonFrom } from "../core/rank/explore";
+import { html, raw, toHtml, type RawHtml } from "../news/render/escape";
 import { page } from "../news/render/layout";
 import { storyList, filterBar, itemPath } from "../news/render/story";
 import { itemPage } from "../news/render/item";
@@ -40,6 +44,48 @@ import { rfc822, timeAgo } from "../news/render/time";
 import {
   discussionJsonLd, itemListJsonLd, siteJsonLd, breadcrumbJsonLd, clampDescription, SITE_NAME,
 } from "../news/render/head";
+
+/** How deep to record front-page impressions. Below the fold a "negative" only means
+ *  nobody scrolled, which is not evidence about the story. */
+const NEWS_LOG_TOP = 20;
+
+/**
+ * Run `p` in the background if the runtime offers somewhere to put it.
+ *
+ * `c.executionCtx` is a getter that THROWS when there is no ExecutionContext — optional
+ * chaining does not save you, so this needs a real try. Without it, a request made with no
+ * context (a test, an embedded invocation) 500s on a line that only exists to record
+ * telemetry, which is exactly backwards: the page is the product, the training row is a
+ * by-product and must never be able to break it.
+ */
+function background(c: any, p: Promise<unknown>): void {
+  try {
+    c.executionCtx.waitUntil(p);
+  } catch {
+    void p; // no context to hold it open; it still runs, and it is already .catch()'d
+  }
+}
+
+/**
+ * Say out loud how the page was ordered.
+ *
+ * A front page has no visible "wrong": nobody can tell a personalized ordering from a
+ * chronological one by looking, and nobody would notice the week it stopped working. So
+ * the page says which it is. Absent (`undefined`) for a logged-out reader or an explicit
+ * sort, where there is nothing to explain — the page is the ordinary one.
+ *
+ * Returns `RawHtml`, not a string: `html` escapes every interpolated string, so handing
+ * it pre-rendered markup would render the tags as visible text. `raw("")` is the empty
+ * case for the same reason.
+ */
+function rankingNote(ranking?: { rescored: boolean; explored: boolean }): RawHtml {
+  if (!ranking) return raw("");
+  const what = ranking.rescored
+    ? "Ranked for you, from what you've read and been to."
+    : "Ranked by the room — personal ranking starts once there's enough signal.";
+  const explored = ranking.explored ? " Shuffled a little so it keeps learning." : "";
+  return html`<p class="rank-note">${what}${explored}</p>`;
+}
 
 type App = Hono<{ Bindings: Env; Variables: Partial<Vars> }>;
 
@@ -175,11 +221,64 @@ async function renderFeed(c: any, forcedSort?: "new") {
   const user = c.get("user") ?? null;
   const nowMs = Date.now();
 
-  const { stories } = await repo(c).feed(
+  /**
+   * The learning loop, on the front page.
+   *
+   * Only for a SIGNED-IN reader on the hot page's first screen. Three conditions, same
+   * reasoning as the events side:
+   *   · signed-in, because an anonymous impression can never be labelled positive (voting
+   *     and commenting need an account) and its exposure count would be shared with every
+   *     other logged-out reader — see `rank_impressions.viewer_id`;
+   *   · `hot`, because `new`/`top`/`discussed` are explicit instructions;
+   *   · first page, so page two isn't reordered against a window page one consumed.
+   *
+   * Most of this site's traffic is logged-out, and that is fine: the front page they get
+   * is byte-identical to today's, and the readers who can actually teach us anything are
+   * exactly the ones who have accounts.
+   */
+  const learning = !!user && f.sort === "hot" && f.offset === 0;
+  const rank = new RankRepo(c.env.DB);
+  const [model, viewerCtx] = learning
+    ? await Promise.all([rank.activeModel("news"), rank.viewerContext(user.id)])
+    : [null, null];
+
+  const { stories, ranking, features } = await repo(c).feed(
     { src: f.src, sort: f.sort, topic: f.topic, limit: f.limit, offset: f.offset },
     user?.id ?? null,
     nowMs,
+    learning && viewerCtx
+      ? {
+          viewer: viewerCtx,
+          weights: model?.weights ?? null,
+          explore: true,
+          epsilon: epsilonFrom(c.env.RANK_EPSILON),
+          timesShownFor: (ids) => rank.timesShown("news", user.id, ids),
+        }
+      : undefined,
   );
+
+  // Record what we served, with the vectors that ordered it. `waitUntil` so a reader
+  // never waits on telemetry — the page is the product, the training row is a by-product.
+  if (learning && features && stories.length) {
+    background(
+      c,
+      rank
+        .logImpressions({
+          surface: "news",
+          viewerId: user.id,
+          modelVersion: model ? `v${model.version}` : "v0",
+          explored: !!ranking?.explored,
+          items: stories.slice(0, NEWS_LOG_TOP).map((s: { id: string }, i: number) => ({
+            itemId: s.id,
+            position: i,
+            features: features.get(s.id) ?? emptyFeatures(),
+          })),
+        })
+        .catch(() => {
+          /* best-effort: a lost impression costs one training row, never a page */
+        }),
+    );
+  }
 
   const origin = newsOrigin(c.env);
   const chrome = await chromeFor(c, forcedSort === "new" ? "new" : "top");
@@ -189,7 +288,8 @@ ${stories.length >= f.limit
     ? html`<div class="pager">
         <a class="btn btn-quiet" href="${pagerHref(f, f.offset + f.limit)}">more →</a>
       </div>`
-    : ""}`;
+    : ""}
+${rankingNote(ranking)}`;
 
   const title = f.src === "bay" ? SITE_NAME : `${f.src} · ${SITE_NAME}`;
   return htmlResponse(
@@ -745,9 +845,7 @@ const xml = (s: unknown) =>
 // same INGEST_TOKEN the events Worker's admin routes use.
 // MUST be registered before the app.all("*") catch-all below, or the 404 handler
 // shadows it.
-app.post("/api/admin/ingest-news", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/ingest-news", requireIngestToken, async (c) => {
   return c.json({ ok: true, ...(await runNewsIngest(c.env)) });
 });
 
@@ -756,9 +854,7 @@ app.post("/api/admin/ingest-news", async (c) => {
 // fetches locally and posts here — the same bridge the events scraper uses for
 // Eventbrite. Narrow by construction: allowlisted origins, validated fields,
 // bounded batch. See src/news/ingest/push.ts for why each limit exists.
-app.post("/api/admin/push-news", async (c) => {
-  const token = c.env.INGEST_TOKEN;
-  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+app.post("/api/admin/push-news", requireIngestToken, async (c) => {
 
   const parsed = PushPayloadSchema.safeParse(await c.req.json().catch(() => null));
   // Reject the batch whole rather than applying the valid half — a partial write

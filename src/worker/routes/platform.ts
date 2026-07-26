@@ -3,6 +3,7 @@ import type { Env, Vars } from "../env";
 import { PlatformRepo } from "../../storage/d1/platform-repo";
 import { SocialRepo } from "../../storage/d1/social-repo";
 import { requireAuth, optionalAuth } from "../../auth/middleware";
+import { requireHost } from "../../auth/host";
 import { GoalCreateSchema, GoalUpdateSchema, CheckinSchema, EventReviewSchema } from "../../../shared/schema";
 
 type App = Hono<{ Bindings: Env; Variables: Partial<Vars> }>;
@@ -103,20 +104,14 @@ export function platformRoutes(): App {
 
   // ── QR check-in ─────────────────────────────────────────────────────────────
   // host issues a rotating token (rendered as a QR at the door)
-  app.post("/api/events/:id/checkin-token", requireAuth, async (c) => {
-    const eventId = c.req.param("id");
-    const host = await new SocialRepo(c.env.DB).eventHost(eventId);
-    if (!host || host.id !== c.get("user")!.id) return c.json({ error: "host only" }, 403);
-    const token = await plat(c).createCheckinToken(eventId);
+  app.post("/api/events/:id/checkin-token", requireAuth, requireHost(), async (c) => {
+    const token = await plat(c).createCheckinToken(c.req.param("id"));
     return c.json({ ok: true, token });
   });
 
   // host live check-in roster
-  app.get("/api/events/:id/checkins", requireAuth, async (c) => {
-    const eventId = c.req.param("id");
-    const host = await new SocialRepo(c.env.DB).eventHost(eventId);
-    if (!host || host.id !== c.get("user")!.id) return c.json({ error: "host only" }, 403);
-    const checkins = await plat(c).eventCheckins(eventId);
+  app.get("/api/events/:id/checkins", requireAuth, requireHost(), async (c) => {
+    const checkins = await plat(c).eventCheckins(c.req.param("id"));
     return c.json({ count: checkins.length, checkins });
   });
 

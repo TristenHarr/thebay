@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { useGetMeQuery, useGetEventFullQuery, useIssueCheckinTokenMutation, useCheckInMutation, useGetCheckinsQuery } from "../../api";
 import { Button, Card, Spinner, PageHeader, Avatar } from "../../ui/kit";
+// Same module the Worker mints with, so the TTL and the refresh cadence cannot drift.
+import { CHECKIN_ROTATE_MS, checkinUrl, tokenFromHash } from "../../../../src/core/checkin/door";
 
 const RESULT_COPY: Record<string, { icon: string; title: string; sub: string; tone: string }> = {
   ok: { icon: "✅", title: "You're checked in!", sub: "+20 points · your attendance streak advanced.", tone: "text-ok" },
@@ -14,8 +16,11 @@ const RESULT_COPY: Record<string, { icon: string; title: string; sub: string; to
 /** Attendee scan target + host door screen. One route, /event/:id/checkin. */
 export function Checkin({ me }: { me: any }) {
   const { id = "" } = useParams();
-  const [sp] = useSearchParams();
-  const scannedToken = sp.get("token");
+  // Read from the FRAGMENT, not the query string. A fragment is never sent to a
+  // server, so the credential stays out of request logs, `Referer` and CDN records —
+  // the reason src/core/net/invite.ts puts handshake secrets there too. React Router
+  // owns the hash for routing purposes but not its params, so read it directly.
+  const scannedToken = tokenFromHash(typeof window === "undefined" ? "" : window.location.hash);
   const { data: full, isLoading } = useGetEventFullQuery(id, { skip: !id });
   const isHost = !!me && full?.host?.id === me.id;
 
@@ -71,11 +76,20 @@ function HostDoor({ eventId, title }: { eventId: string; title?: string }) {
     setErr(null);
     const r: any = await issue(eventId);
     if (!r.data?.token) { setErr("Only the host can open check-in."); return; }
-    const url = `${window.location.origin}/app/event/${eventId}/checkin?token=${r.data.token}`;
-    const png = await QRCode.toDataURL(url, { width: 320, margin: 1, color: { dark: "#0a0a0f", light: "#ffffff" } });
+    const png = await QRCode.toDataURL(checkinUrl(window.location.origin, eventId, r.data.token), {
+      width: 320, margin: 1, color: { dark: "#0a0a0f", light: "#ffffff" },
+    });
     setDataUrl(png);
   }
-  useEffect(() => { newCode(); /* issue an initial code on open */ /* eslint-disable-next-line */ }, [eventId]);
+  // Codes now expire in ~2 minutes and minting revokes its predecessor, so the door
+  // has to keep re-minting or it goes dark mid-event. This interval is what makes the
+  // short TTL survivable: the screen always shows a code with life left in it.
+  useEffect(() => {
+    newCode();
+    const t = setInterval(newCode, CHECKIN_ROTATE_MS);
+    return () => clearInterval(t);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [eventId]);
 
   return (
     <div data-testid="checkin-host">

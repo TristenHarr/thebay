@@ -355,6 +355,23 @@ const scan = (facts: EventFacts): string =>
  * us" is a happy hour, not a talk. Modifiers are additive and specific enough to
  * read from the whole listing.
  */
+/**
+ * Which archetype a listing is — the shared half of `baselinePredict`.
+ *
+ * Extracted and exported because the founder-type affinity chart
+ * (`src/core/types/chart.ts`) needs the SAME answer: a room's archetype is its "gym type", and
+ * two modules disagreeing about whether something is a hackathon or a workshop would put a
+ * person at home in a room the vibe card calls something else. One classifier, one answer.
+ *
+ * Returns null when nothing matches, which is a real and common case — a title like
+ * "Scarlet Thread Exhibit" is none of these.
+ */
+export function classifyArchetype(facts: EventFacts): string | null {
+  const hay = scan(facts);
+  const titleish = [facts.title, (facts.categories ?? []).join(" ")].join(" ");
+  return (ARCHETYPES.find((a) => a.re.test(titleish)) ?? ARCHETYPES.find((a) => a.re.test(hay)))?.id ?? null;
+}
+
 export function baselinePredict(facts: EventFacts): VibePrediction {
   const hay = scan(facts);
   const titleish = [facts.title, (facts.categories ?? []).join(" ")].join(" ");

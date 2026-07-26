@@ -7,6 +7,9 @@ import { curateFrontPage, SUBMISSION } from "../../news/curate";
 import type { IngestedStory } from "../../news/ingest/types";
 import { deriveTopics, looksLikeCommercialTraining } from "../../news/summarize";
 import { isTemplateDuplicate } from "../../news/dedup";
+import { rerank, storyToRankItem } from "../../core/rank/rerank";
+import type { FeatureVector, ViewerCtx } from "../../core/rank/features";
+import type { Weights } from "../../core/rank/model";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
@@ -192,11 +195,37 @@ export class NewsRepo {
    * no POW, and network/interest weighting is per-viewer); the other sorts are
    * plain whitelisted ORDER BYs.
    */
+  /**
+   * Personalization hooks for the hot front page.
+   *
+   * Deliberately DATA-IN, DATA-OUT rather than a `RankRepo` dependency: this repo calls
+   * only the pure `rerank` in `core/rank`, and the caller supplies the viewer context, the
+   * weights and a way to look up exposure counts. That keeps `NewsRepo` from reaching into
+   * another aggregate's table, and keeps the ranking testable with no rank tables at all.
+   *
+   * `timesShownFor` is a callback because the candidate ids aren't known until after the
+   * query — the caller cannot precompute what it doesn't yet have.
+   */
   async feed(
     opts: { src: NewsFeedSource; sort: NewsSort; topic?: string; limit: number; offset: number },
     viewerId?: string | null,
     nowMs: number = Date.now(),
-  ): Promise<{ stories: Story[]; total: number }> {
+    personalize?: {
+      viewer: ViewerCtx;
+      weights: Weights | null;
+      explore?: boolean;
+      /** Exploration rate; see `Env.RANK_EPSILON`. Omitted ⇒ the module default. */
+      epsilon?: number;
+      timesShownFor?: (ids: string[]) => Promise<ReadonlyMap<string, number>>;
+    },
+  ): Promise<{
+    stories: Story[];
+    total: number;
+    /** Present only when `personalize` was supplied AND the hot path ran. */
+    ranking?: { rescored: boolean; explored: boolean; window: number };
+    /** id → the vector each SERVED story was scored with, for the caller to log. */
+    features?: Map<string, FeatureVector>;
+  }> {
     const origins = this.originsFor(opts.src);
     const where: string[] = ["s.dead = 0"];
     const binds: any[] = [];
@@ -237,6 +266,8 @@ export class NewsRepo {
     }
 
     let stories = rows.map(rowToStory);
+    let rankingOut: { rescored: boolean; explored: boolean; window: number } | undefined;
+    let featuresOut: Map<string, FeatureVector> | undefined;
 
     if (opts.sort === "hot") {
       const network = viewerId ? await this.networkVoteCounts(stories.map((s) => s.id), viewerId) : new Map<string, number>();
@@ -256,7 +287,46 @@ export class NewsRepo {
         externalPoints: s.externalPoints ?? 0,
         _s: s,
       }));
-      const ranked = rankStories(rankable, "hot", nowMs, { bayView: opts.src === "bay" }).map((r) => r._s);
+      let ranked = rankStories(rankable, "hot", nowMs, { bayView: opts.src === "bay" }).map((r) => r._s);
+
+      /**
+       * The learned rescore sits BETWEEN the hot score and curation, and the order of
+       * those three is the whole design:
+       *
+       *   hotScore   decides what is live at all (gravity + votes + network + origin)
+       *   rescore    reorders it for this reader
+       *   curate     has the last word on the MIX (per-source quotas, cluster dedup)
+       *
+       * Curation must stay last or personalization would quietly dismantle the editorial
+       * policy — a reader who only ever votes on Hacker News links would get a front page
+       * of nothing but Hacker News, which is exactly the failure `curate.ts` exists to
+       * prevent. So the model chooses *which* story from each source, and the quotas still
+       * choose how many. That is also why diversity discounting is off here (`groupKeyOf`
+       * → null): the quotas already do that job, and doing it twice punishes a source
+       * twice for the same property.
+       */
+      if (personalize) {
+        const seen = personalize.timesShownFor
+          ? await personalize.timesShownFor(ranked.map((s) => s.id))
+          : undefined;
+        const out = rerank({
+          items: ranked,
+          toRankItem: (s) =>
+            storyToRankItem(s, { freshnessAt: freshnessOf(s), networkVotes: network.get(s.id) ?? 0 }),
+          viewer: personalize.viewer,
+          surface: "news",
+          nowMs,
+          weights: personalize.weights,
+          viewerId: viewerId ?? null,
+          explore: personalize.explore ?? false,
+          epsilon: personalize.epsilon,
+          timesShown: seen,
+          groupKeyOf: () => null,
+        });
+        ranked = out.items;
+        rankingOut = { rescored: out.rescored, explored: out.explored, window: ranked.length };
+        featuresOut = out.features;
+      }
 
       if (opts.src === "bay") {
         // The curated front page: human submissions lead, then a quality-barred,
@@ -287,7 +357,7 @@ export class NewsRepo {
       countBinds.push(new Date(nowMs - MAX_BACKDATE_DAYS * 86_400_000).toISOString());
     }
     const total = await this.countStories(countWhere, countBinds);
-    return { stories, total };
+    return { stories, total, ranking: rankingOut, features: featuresOut };
   }
 
   /**

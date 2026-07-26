@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useSearchEventsQuery, useGetEventsQuery, useFriendsFeedQuery, useRsvpMutation } from "../../api";
+import { useSearchEventsQuery, useGetEventsQuery, useFriendsFeedQuery, useRsvpMutation, useRankFeedbackMutation } from "../../api";
 import { Card, Avatar, Chip, Badge, SkeletonList, PageHeader, EmptyState, Button, EventThumb, input } from "../../ui/kit";
 import { fmtDate } from "../feed/Feed";
 import {
@@ -91,7 +91,13 @@ export function Discover({ me }: { me: any }) {
   const { data: cached } = useGetEventsQuery("?limit=1000", { skip: !isError });
   const { data: ff } = useFriendsFeedQuery(undefined, { skip: !me });
   const [rsvp] = useRsvpMutation();
+  const [feedback] = useRankFeedbackMutation();
   const nav = useNavigate();
+
+  /** Opening an event is a positive the server cannot observe for itself: an RSVP is a
+   *  row in `rsvps`, a click is not. Fire-and-forget — a dropped signal costs one
+   *  training row, and must never cost a navigation. */
+  const noteOpen = (id: string) => { if (me) void feedback({ surface: "events", itemId: id, kind: "open" }); };
 
   const friendsByEvent = useMemo(() => new Map((ff?.items || []).map((i: any) => [i.event.id, i.friends])), [ff]);
   const serverEvents: any[] = data?.events ?? [];
@@ -242,7 +248,7 @@ export function Discover({ me }: { me: any }) {
               <EventThumb event={e} className="w-28 shrink-0 object-cover" glyph={34} />
               <div className="min-w-0 flex-1 p-3">
                 <div className="font-mono text-xs text-accent">{fmtDate(e.startUtc, e.timezone)}</div>
-                <h3 className="mt-0.5 font-semibold leading-snug"><Link to={`/event/${e.id}`} className="hover:text-accent">{e.title}</Link></h3>
+                <h3 className="mt-0.5 font-semibold leading-snug"><Link to={`/event/${e.id}`} className="hover:text-accent" onClick={() => noteOpen(e.id)}>{e.title}</Link></h3>
                 <div className="truncate text-xs text-muted">{[e.venueName, e.organizer].filter(Boolean).join(" · ")}</div>
                 <div className="mt-1 flex flex-wrap gap-1.5">{(e.categories || []).slice(0, 3).map((c: string) => <Badge key={c}>{c}</Badge>)}</div>
                 {friends?.length ? (
@@ -267,6 +273,27 @@ export function Discover({ me }: { me: any }) {
           <div className="py-4 text-center text-xs text-muted">Showing the first {MAX_LOADED} — narrow the search to see the rest.</div>
         )}
       </div>
+      {list.length ? <RankingNote ranking={data?.ranking} /> : null}
     </div>
+  );
+}
+
+/**
+ * Say out loud how this page was ordered.
+ *
+ * A recommendation feed has no visible "wrong", so the only way anyone can tell that
+ * personalization is on — or notice the week it silently stops working — is if the page
+ * says so. `null` means this was an explicit search or sort, which is answered verbatim
+ * and deliberately not ranked, so there is nothing to explain.
+ */
+function RankingNote({ ranking }: { ranking?: { model: number | null; rescored: boolean; explored: boolean } | null }) {
+  if (!ranking) return null;
+  return (
+    <p className="mt-4 font-mono text-[11px] text-muted" data-testid="ranking-note">
+      {ranking.rescored
+        ? `Ranked for you by model v${ranking.model}`
+        : "Ordered by relevance — personal ranking starts once there's enough signal"}
+      {ranking.explored ? " · shuffled a little so it keeps learning" : ""}
+    </p>
   );
 }

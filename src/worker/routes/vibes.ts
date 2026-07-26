@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { requireAuth, optionalAuth } from "../../auth/middleware";
+import { requireIngestToken } from "../middleware/bearer";
 import { VibeRepo, type VibeCard } from "../../storage/d1/vibe-repo";
 import { SocialRepo } from "../../storage/d1/social-repo";
 import { PlatformRepo } from "../../storage/d1/platform-repo";
@@ -33,11 +34,6 @@ const repo = (c: { env: Env }) => new VibeRepo(c.env.DB);
 function bgCtx(c: any): { waitUntil(p: Promise<unknown>): void } | null {
   try { return c.executionCtx ?? null; } catch { return null; }
 }
-
-const adminOk = (c: any) => {
-  const token = c.env.INGEST_TOKEN;
-  return !!token && c.req.header("authorization") === `Bearer ${token}`;
-};
 
 /** Ask the model for a better card behind the response. Best-effort by definition:
  *  the deterministic card is already stored and served. */
@@ -139,8 +135,7 @@ export function vibesRoutes(): App {
   // Backfill / re-enrich cards with the platform model. Bearer-gated like every
   // other admin endpoint. With no model configured this still runs and writes the
   // deterministic card, which is exactly the point.
-  app.post("/api/admin/vibes/enrich", async (c) => {
-    if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  app.post("/api/admin/vibes/enrich", requireIngestToken, async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { limit?: number; refresh?: boolean };
     const r = repo(c);
     const { cfg, opts } = vibeLlm(c.env as any);
@@ -158,8 +153,7 @@ export function vibesRoutes(): App {
 
   // Nudge everyone who owes a read on a room they attended. Reuses the existing
   // web-push subscriptions; bodyless, like every other push here.
-  app.post("/api/admin/vibes/nudge", async (c) => {
-    if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  app.post("/api/admin/vibes/nudge", requireIngestToken, async (c) => {
     if (!c.env.VAPID_PUBLIC_KEY || !c.env.VAPID_PRIVATE_KEY) return c.json({ error: "push not configured" }, 503);
     const plat = new PlatformRepo(c.env.DB);
     const users = await repo(c).usersOwingReports();

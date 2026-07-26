@@ -17,6 +17,15 @@ export const api = createApi({
     // Reserved by M0 for the parallel tracks — declared up front so no two tracks
     // have to edit this line.
     "Search", "Vibes", "Places", "PlaceKinds", "MapPacks", "Companies", "Rounds", "Outcomes", "Attribution",
+    "Xp", // Experience / leveling (Trails game)
+    "Pokedex", // Founder catches (the Pokédex)
+    "Crawls", // Founder crawls (planned routes)
+    "Rank", // The learning loop — the live ranking model
+    "Trophies", // The declarative trophy catalog (src/core/trophies)
+    "Gyms", "Gym", // Hosts as gym leaders (migrations/0028)
+    "Graph", // The multi-entity evidenced projection (src/core/graph)
+    "Identity", "Card", // Founder types, vouches + the card (migrations/0031)
+    "Net", "NetRecipes", // The scrape network — membership, clients, recipes
   ],
   endpoints: (b) => ({
     // auth + profile
@@ -33,6 +42,51 @@ export const api = createApi({
 
     // events
     getEvents: b.query<{ events: any[]; total: number; facets: any }, string | void>({ query: (qs) => `api/events${qs || "?limit=200"}`, providesTags: ["Events"] }),
+    // The personalized feed. Same filter grammar as `api/events`, but ranked for the
+    // viewer, and it is the request that records impressions — so it must not be used for
+    // background prefetching or the training set fills up with rows nobody saw.
+    // ── the scrape network (migrations/0023 + /0025) ─────────────────────────
+    // Membership, the animated in-person handshake, worker clients and the recipe queue.
+    getNetMe: b.query<any, void>({ query: () => "api/net/me", providesTags: ["Net"] }),
+    // Starts a ~30s handshake session and returns its whole frame list. NOT cached and
+    // deliberately a mutation: each call revokes the session before it, so a cached replay
+    // would hand out a code the server has already retired.
+    startHandshake: b.mutation<any, { lat: number; lng: number }>({
+      query: (body) => ({ url: "api/net/invite", method: "POST", body }),
+    }),
+    joinNetwork: b.mutation<any, { sessionId: string; frames: Array<{ step: number; code: string }>; lat: number; lng: number }>({
+      query: (body) => ({ url: "api/net/join", method: "POST", body }),
+      // Joining creates a real friendship and pays both sides, so the whole social surface
+      // is stale afterwards.
+      invalidatesTags: ["Net", "Me", "Friends", "Achievements"],
+    }),
+    registerClient: b.mutation<any, { kind: "cli" | "extension" | "web" | "app"; label?: string; capabilities?: string[] }>({
+      query: (body) => ({ url: "api/net/clients", method: "POST", body }),
+      invalidatesTags: ["Net"],
+    }),
+    revokeClient: b.mutation<any, string>({
+      query: (id) => ({ url: `api/net/clients/${id}`, method: "DELETE" }),
+      invalidatesTags: ["Net"],
+    }),
+    getNetLeaderboard: b.query<{ board: any[] }, void>({ query: () => "api/net/leaderboard", providesTags: ["Net"] }),
+    getNetRecipes: b.query<{ recipes: any[] }, void>({ query: () => "api/net/recipes", providesTags: ["NetRecipes"] }),
+    proposeRecipe: b.mutation<any, { sourceId: string; type: string; params: Record<string, unknown>; notes?: string }>({
+      query: (body) => ({ url: "api/net/recipes", method: "POST", body }),
+      invalidatesTags: ["NetRecipes"],
+    }),
+    getForYou: b.query<{ events: any[]; total: number; facets: any; ranking: { model: number | null; rescored: boolean; explored: boolean; pool: number } }, string | void>({
+      query: (qs) => `api/events/foryou${qs || "?limit=100"}`,
+      providesTags: ["Events"],
+    }),
+    // Deliberately invalidates NOTHING: refetching the feed on a click would reorder the
+    // page under the cursor of the person who just clicked.
+    rankFeedback: b.mutation<{ ok: boolean; applied: boolean }, { surface: "events" | "news" | "shadows"; itemId: string; kind: "open" | "dismiss" }>({
+      query: (body) => ({ url: "api/rank/feedback", method: "POST", body }),
+    }),
+    getRankModel: b.query<Record<string, any>, string | void>({
+      query: (surface) => `api/rank/model${surface ? `?surface=${surface}` : ""}`,
+      providesTags: ["Rank"],
+    }),
     getEventFull: b.query<any, string>({ query: (id) => `api/event/${id}/full`, providesTags: (_r, _e, id) => [{ type: "Event", id }] }),
     rsvp: b.mutation<any, { id: string; status: string }>({ query: ({ id, status }) => ({ url: `api/events/${id}/rsvp`, method: "POST", body: { status } }), invalidatesTags: (_r, _e, a) => ["Me", "Events", { type: "Event", id: a.id }, "Obligations"] }),
     // event reviews feed Host-NPS, so Rankings must refresh too
@@ -83,7 +137,98 @@ export const api = createApi({
 
     getAchievements: b.query<{ achievements: any[]; streaks: any[]; points: any[] }, void>({ query: () => "api/me/achievements", providesTags: ["Achievements"] }),
     getPublicAchievements: b.query<{ achievements: any[]; streaks: any[] }, string>({ query: (handle) => `api/u/${handle}/achievements` }),
+    // The whole trophy catalog, earned and locked. Also provides "Achievements" on
+    // purpose: every mutation that pays points already invalidates that tag (check-in,
+    // shadow, vibe report, place), so trophies refresh with zero changes at those
+    // ~6 call sites. The endpoint reconciles server-side, so the response can report
+    // `justUnlocked`.
+    getTrophies: b.query<
+      { progress: any[]; nextUp: any[]; earnedCount: number; total: number; xpFromTrophies: number; justUnlocked: string[] },
+      void
+    >({ query: () => "api/trophies", providesTags: ["Trophies", "Achievements"] }),
+
+    // ── gyms: hosts award XP, capped by verified dwell ────────────────────────
+    getGymsHosted: b.query<{ hosted: any[] }, void>({ query: () => "api/gyms/hosted", providesTags: ["Gyms"] }),
+    getGym: b.query<any, string>({ query: (eventId) => `api/events/${eventId}/gym`, providesTags: (_r, _e, id) => [{ type: "Gym", id }] }),
+    getMyGymAwards: b.query<{ awards: any[] }, void>({ query: () => "api/me/gym-awards", providesTags: ["Gyms"] }),
+
+    // ── founder types, cards + host badges ────────────────────────────────────
+    getFounderTypes: b.query<{ types: any[] }, void>({ query: () => "api/founder-types" }),
+    getMyIdentity: b.query<{ typeId: string | null; type2Id: string | null; vouches: Record<string, number> }, void>({
+      query: () => "api/me/identity",
+      providesTags: ["Identity"],
+    }),
+    setMyIdentity: b.mutation<any, { typeId: string; type2Id?: string | null }>({
+      query: (body) => ({ url: "api/me/identity", method: "PUT", body }),
+      invalidatesTags: ["Identity", "Card", "Me"],
+    }),
+    getMyCard: b.query<{ card: any }, void>({ query: () => "api/me/card", providesTags: ["Card"] }),
+    getUserCard: b.query<{ card: any }, string>({ query: (handle) => `api/u/${handle}/card` }),
+    vouchType: b.mutation<any, { userId: string; typeId: string; eventId?: string }>({
+      query: ({ userId, ...body }) => ({ url: `api/users/${userId}/vouch`, method: "POST", body }),
+      invalidatesTags: ["Identity", "Card"],
+    }),
+    getEventAffinity: b.query<any, string>({ query: (eventId) => `api/events/${eventId}/affinity`, providesTags: ["Identity"] }),
+    getEventBadges: b.query<{ badges: any[] }, string>({ query: (eventId) => `api/events/${eventId}/gym/badges`, providesTags: (_r, _e, id) => [{ type: "Gym", id }] }),
+    mintGymBadge: b.mutation<any, { eventId: string; label: string; emoji: string; color?: string; blurb?: string }>({
+      query: ({ eventId, ...body }) => ({ url: `api/events/${eventId}/gym/badges`, method: "POST", body }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Gym", id: a.eventId }],
+    }),
+    awardGymBadge: b.mutation<any, { eventId: string; badgeId: string; userId: string }>({
+      query: ({ eventId, badgeId, userId }) => ({ url: `api/events/${eventId}/gym/badges/${badgeId}/award`, method: "POST", body: { userId } }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Gym", id: a.eventId }, "Card"],
+    }),
+    // The read path that never existed — see GraphRepo.matchPrefs.
+    getMatchPrefs: b.query<{ prefs: any | null }, void>({ query: () => "api/me/match-prefs", providesTags: ["Match"] }),
+    setGymPolicy: b.mutation<any, { eventId: string; mode: string; flatXp?: number; bounties?: any[] }>({
+      query: ({ eventId, ...body }) => ({ url: `api/events/${eventId}/gym`, method: "PUT", body }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Gym", id: a.eventId }, "Gyms"],
+    }),
+    armGym: b.mutation<any, string>({
+      query: (eventId) => ({ url: `api/events/${eventId}/gym/arm`, method: "POST" }),
+      invalidatesTags: (_r, _e, id) => [{ type: "Gym", id }, "Gyms"],
+    }),
+    settleGym: b.mutation<any, string>({
+      query: (eventId) => ({ url: `api/events/${eventId}/gym/settle`, method: "POST" }),
+      invalidatesTags: (_r, _e, id) => [{ type: "Gym", id }, "Gyms"],
+    }),
+    // An award mints XP, so Me/Xp/Trophies all move with it.
+    awardGym: b.mutation<any, { eventId: string; userId: string; xp?: number; bountyKey?: string; note?: string }>({
+      query: ({ eventId, ...body }) => ({ url: `api/events/${eventId}/gym/awards`, method: "POST", body }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Gym", id: a.eventId }, "Me", "Xp", "Trophies"],
+    }),
+    bulkAwardGym: b.mutation<any, { eventId: string; awards: Array<{ userId: string; xp?: number }> }>({
+      query: ({ eventId, awards }) => ({ url: `api/events/${eventId}/gym/awards/bulk`, method: "POST", body: { awards } }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Gym", id: a.eventId }, "Me", "Xp", "Trophies"],
+    }),
+    revokeGymAward: b.mutation<any, { eventId: string; awardId: string; reason: string }>({
+      query: ({ eventId, awardId, reason }) => ({ url: `api/events/${eventId}/gym/awards/${awardId}`, method: "DELETE", body: { reason } }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Gym", id: a.eventId }, "Me", "Xp"],
+    }),
+    // Returns the door secret ONCE — it is never stored in the clear, so this response
+    // is the only place it exists. Not cached, deliberately.
+    mintDoorCode: b.mutation<{ codeId: string; expiresAt: string; url: string; rotateMs: number; ttlMs: number }, { eventId: string; lat: number; lng: number }>({
+      query: ({ eventId, ...body }) => ({ url: `api/events/${eventId}/door`, method: "POST", body }),
+    }),
+    claimPresence: b.mutation<any, { eventId: string; codeId: string; secret: string; lat: number; lng: number }>({
+      query: ({ eventId, ...body }) => ({ url: `api/events/${eventId}/presence`, method: "POST", body }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Gym", id: a.eventId }, "Me", "Achievements", "Obligations"],
+    }),
     getNetworkGraph: b.query<{ nodes: any[]; edges: any[] }, void>({ query: () => "api/network/graph", providesTags: ["Friends"] }),
+    // The typed, evidenced projection. `Friends` on purpose: accepting a friend request or
+    // blocking somebody changes who is in the graph, and those mutations already invalidate it.
+    getGraph: b.query<{ nodes: any[]; edges: any[]; omitted: any }, string | void>({
+      query: (qs) => `api/graph${qs || ""}`,
+      providesTags: ["Friends", "Graph"],
+    }),
+    getGraphGeo: b.query<{ nodes: any[]; edges: any[]; omitted: any }, void>({
+      query: () => "api/graph/geo",
+      providesTags: ["Friends", "Graph"],
+    }),
+    getGraphPath: b.query<{ path: any; why: string[]; reasons: any[]; visible: boolean; exhausted: boolean; nodes: any[] }, string>({
+      query: (targetId) => `api/graph/path/${targetId}`,
+      providesTags: ["Graph"],
+    }),
     // map bulletin board (legacy — superseded by shadows)
     getNotes: b.query<{ notes: any[] }, void>({ query: () => "api/notes", providesTags: ["Notes"] }),
     postNote: b.mutation<{ ok: boolean; id: string }, { lat: number; lng: number; body: string }>({ query: (body) => ({ url: "api/notes", method: "POST", body }), invalidatesTags: ["Notes"] }),
@@ -99,6 +244,34 @@ export const api = createApi({
     reactShadow: b.mutation<{ ok: boolean }, { id: string; emoji: string; on?: boolean }>({ query: ({ id, ...body }) => ({ url: `api/shadows/${id}/react`, method: "POST", body }), invalidatesTags: ["Shadows"] }),
     reportShadow: b.mutation<{ ok: boolean }, string>({ query: (id) => ({ url: `api/shadows/${id}/report`, method: "POST" }), invalidatesTags: ["Shadows"] }),
     deleteShadow: b.mutation<{ ok: boolean; deleted: boolean }, string>({ query: (id) => ({ url: `api/shadows/${id}`, method: "DELETE" }), invalidatesTags: ["Shadows", "MyShadow"] }),
+
+    // Experience / leveling (the Trails game)
+    getMyXp: b.query<{ level: number; xp: number; xpIntoLevel: number; xpForNext: number; toNext: number; pct: number; breakdown: { kind: string; xp: number; count: number }[] }, void>({ query: () => "api/me/xp", providesTags: ["Xp"] }),
+    getXpLeaderboard: b.query<{ metric: string; rows: any[] }, string | void>({ query: (metric) => `api/xp/leaderboard${metric ? `?metric=${metric}` : ""}`, providesTags: ["Xp"] }),
+
+    // Mobbing — live movement → XP + trails + the living map
+    pingMovement: b.mutation<{ dist: number; xp: number; mps: number; flagged: boolean; cappedToday: boolean; cell: string; level: any }, { lat: number; lng: number; scope?: string }>({
+      query: (body) => ({ url: "api/movement/ping", method: "POST", body }),
+      invalidatesTags: ["Xp"],
+    }),
+    getMyTrail: b.query<{ trail: { lat: number; lng: number; at: string }[] }, void>({ query: () => "api/movement/trail" }),
+    getMovementLive: b.query<{ dots: { lat: number; lng: number }[] }, string>({ query: (cells) => `api/movement/live?cells=${cells}` }),
+    getOrbs: b.query<{ epoch: number; orbs: { id: string; lat: number; lng: number; xp: number }[] }, string>({ query: (cells) => `api/orbs?cells=${cells}`, providesTags: ["Xp"] }),
+    pickupOrb: b.mutation<{ ok: boolean; xp?: number; reason?: string; level?: any }, { orbId: string; lat: number; lng: number }>({ query: (body) => ({ url: "api/orbs/pickup", method: "POST", body }), invalidatesTags: ["Xp"] }),
+
+    // Catches — the founder Pokédex
+    mintCatchToken: b.mutation<{ token: string }, void>({ query: () => ({ url: "api/catches/token", method: "POST" }) }),
+    scanCatch: b.mutation<{ ok: boolean; reason?: string; caught?: any; xp?: number; level?: any }, { token: string }>({ query: (body) => ({ url: "api/catches/scan", method: "POST", body }), invalidatesTags: ["Pokedex", "Xp"] }),
+    getPokedex: b.query<{ pokedex: any[] }, void>({ query: () => "api/catches", providesTags: ["Pokedex"] }),
+    getMyStats: b.query<{ stats: any }, void>({ query: () => "api/me/stats", providesTags: ["Xp"] }),
+
+    // Founder crawls — planned, shareable routes
+    getCrawls: b.query<{ crawls: any[] }, void>({ query: () => "api/crawls", providesTags: ["Crawls"] }),
+    getCrawl: b.query<{ crawl: any; stops: any[]; participants: any[] }, string>({ query: (id) => `api/crawls/${id}`, providesTags: (_r, _e, id) => [{ type: "Crawls", id }] }),
+    createCrawl: b.mutation<{ ok: boolean; id: string }, { name: string; description?: string; stops: { name: string; lat: number; lng: number }[] }>({ query: (body) => ({ url: "api/crawls", method: "POST", body }), invalidatesTags: ["Crawls"] }),
+    joinCrawl: b.mutation<{ ok: boolean }, string>({ query: (id) => ({ url: `api/crawls/${id}/join`, method: "POST" }), invalidatesTags: (_r, _e, id) => [{ type: "Crawls", id }, "Crawls"] }),
+    checkpointCrawl: b.mutation<any, { id: string; stopIdx: number; lat: number; lng: number }>({ query: ({ id, ...body }) => ({ url: `api/crawls/${id}/checkpoint`, method: "POST", body }), invalidatesTags: (_r, _e, a) => [{ type: "Crawls", id: a.id }, "Xp"] }),
+
     getCommunities: b.query<{ communities: any[] }, void>({ query: () => "api/communities", providesTags: ["Communities"] }),
     createCommunity: b.mutation<any, { name: string; kind?: string }>({ query: (body) => ({ url: "api/communities", method: "POST", body }), invalidatesTags: ["Communities"] }),
     getCommunity: b.query<{ community: any; members: any[]; metric: string; rankings: any[] }, { id: string; metric?: string }>({ query: ({ id, metric }) => `api/communities/${id}${metric ? `?metric=${metric}` : ""}`, providesTags: (_r, _e, a) => [{ type: "Communities", id: a.id }] }),
@@ -136,6 +309,10 @@ export const api = createApi({
         total: number;
         facets: { tags: Array<{ value: string; facet: string; label: string; emoji: string | null; color: string | null; count: number }>; cities: Array<{ value: string; count: number }>; sources: Array<{ value: string; count: number }> };
         used: { fts: boolean; vector: boolean };
+        /** Present only on a BROWSE (no text query, default sort, first page) — the one
+         *  request that personalizes and records impressions. `null` on an explicit
+         *  search or sort, which is answered verbatim. */
+        ranking: { model: number | null; rescored: boolean; explored: boolean; window: number } | null;
         limit: number;
         offset: number;
         nextOffset: number | null;
@@ -300,8 +477,23 @@ export const {
   useGetDeckQuery, useSetMatchPrefsMutation, useMatchActMutation,
   useGetCommunitiesQuery, useCreateCommunityMutation, useGetCommunityQuery, useJoinCommunityMutation, useGetMediaQuery, useGetIntegrationsQuery, useGetSuggestionsQuery, useSubscribeCalendarMutation,
   useGetNetworkGraphQuery, useGetAchievementsQuery, useGetPublicAchievementsQuery, useGetPublicGoalsQuery,
+  useGetTrophiesQuery,
+  useGetGraphQuery, useGetGraphGeoQuery, useGetGraphPathQuery,
+  useGetFounderTypesQuery, useGetMyIdentityQuery, useSetMyIdentityMutation,
+  useGetMyCardQuery, useGetUserCardQuery, useVouchTypeMutation,
+  useGetEventAffinityQuery, useGetEventBadgesQuery, useMintGymBadgeMutation, useAwardGymBadgeMutation,
+  useGetMatchPrefsQuery,
+  useGetGymsHostedQuery, useGetGymQuery, useGetMyGymAwardsQuery,
+  useSetGymPolicyMutation, useArmGymMutation, useSettleGymMutation,
+  useAwardGymMutation, useBulkAwardGymMutation, useRevokeGymAwardMutation,
+  useMintDoorCodeMutation, useClaimPresenceMutation,
   useGetNotesQuery, usePostNoteMutation,
   useGetShadowsQuery, useGetHeatQuery, useGetMyShadowQuery, usePostShadowMutation, useReactShadowMutation, useReportShadowMutation, useDeleteShadowMutation,
+  useGetMyXpQuery, useGetXpLeaderboardQuery,
+  usePingMovementMutation, useGetMyTrailQuery, useGetMovementLiveQuery,
+  useGetOrbsQuery, usePickupOrbMutation,
+  useMintCatchTokenMutation, useScanCatchMutation, useGetPokedexQuery, useGetMyStatsQuery,
+  useGetCrawlsQuery, useGetCrawlQuery, useCreateCrawlMutation, useJoinCrawlMutation, useCheckpointCrawlMutation,
   useIssueCheckinTokenMutation, useCheckInMutation, useGetCheckinsQuery,
   useGetEventMediaQuery, useGetAgendaQuery, useAttachMediaMutation,
   useGetImportedQuery, useConnectIntegrationMutation, useImportIntegrationMutation,
@@ -323,4 +515,10 @@ export const {
   useGetMyOutcomesQuery, useGetPublicOutcomesQuery, useCreateOutcomeMutation,
   useClaimAttributionMutation, useConfirmAttributionMutation,
   useGetImpactBoardQuery, useSetAttributionOptOutMutation,
+  // the learning loop
+  useGetForYouQuery, useRankFeedbackMutation, useGetRankModelQuery,
+  // the scrape network
+  useGetNetMeQuery, useStartHandshakeMutation, useJoinNetworkMutation,
+  useRegisterClientMutation, useRevokeClientMutation,
+  useGetNetLeaderboardQuery, useGetNetRecipesQuery, useProposeRecipeMutation,
 } = api;

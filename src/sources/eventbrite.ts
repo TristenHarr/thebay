@@ -3,6 +3,7 @@ import type { RawEvent } from "../core/models/event";
 import type { SourceConfig } from "../core/models/source";
 import type { AdapterContext, SourceAdapter } from "./types";
 import { fetchText, sleep } from "./util/http";
+import { extractAssignedJson, getResults, mapEbEvent } from "./eventbrite-map";
 import { jsonLdRawEvents } from "./util/jsonld";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -40,89 +41,9 @@ function buildUrl(location: string, query: string, page: number): string {
   return `https://www.eventbrite.com/d/${location}/${query}/?page=${page}`;
 }
 
-/** Balanced-brace extraction of `window.__SERVER_DATA__ = {...}`. */
-export function extractAssignedJson(html: string, marker: string): any | null {
-  const i = html.indexOf(marker);
-  if (i < 0) return null;
-  const start = html.indexOf("{", i);
-  if (start < 0) return null;
-  let depth = 0;
-  let inStr = false;
-  let esc = false;
-  let quote = "";
-  for (let k = start; k < html.length; k++) {
-    const c = html[k]!;
-    if (inStr) {
-      if (esc) esc = false;
-      else if (c === "\\") esc = true;
-      else if (c === quote) inStr = false;
-    } else if (c === '"' || c === "'") {
-      inStr = true;
-      quote = c;
-    } else if (c === "{") {
-      depth++;
-    } else if (c === "}") {
-      depth--;
-      if (depth === 0) {
-        try {
-          return JSON.parse(html.slice(start, k + 1));
-        } catch {
-          return null;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function txt(v: any): string | undefined {
-  if (v == null) return undefined;
-  if (typeof v === "string") return v;
-  if (typeof v === "object") return v.text ?? v.html ?? undefined;
-  return String(v);
-}
-
-export function getResults(data: any): any[] {
-  const e = data?.search_data?.events;
-  if (Array.isArray(e?.results)) return e.results;
-  if (Array.isArray(e)) return e;
-  if (Array.isArray(data?.events?.results)) return data.events.results;
-  return [];
-}
-
-export function mapEbEvent(ev: any, cfg: SourceConfig<EbParams>): RawEvent | null {
-  const title = txt(ev.name);
-  const url = ev.url || ev.tickets_url || ev.vanity_url;
-  const start = ev.start?.utc || ev.start_date || ev.start?.local;
-  if (!title || !url || !start) return null;
-
-  const venue = ev.primary_venue ?? ev.venue;
-  const addr = venue?.address;
-  const address =
-    addr?.localized_address_display ||
-    [addr?.address_1, addr?.city, addr?.region].filter(Boolean).join(", ") ||
-    undefined;
-
-  return {
-    sourceId: cfg.id,
-    sourceType: "eventbrite",
-    externalId: ev.id ? String(ev.id) : undefined,
-    title,
-    description: txt(ev.summary) ?? txt(ev.description),
-    startRaw: start,
-    endRaw: ev.end?.utc || ev.end_date,
-    timezoneHint: ev.start?.timezone,
-    venueName: venue?.name,
-    address,
-    city: addr?.city,
-    url,
-    organizer: ev.primary_organizer?.name ?? ev.organizer?.name,
-    imageUrl: ev.image?.url ?? ev.image?.original?.url ?? ev.logo?.url,
-    isFree: typeof ev.is_free === "boolean" ? ev.is_free : undefined,
-    priceText: ev.ticket_availability?.minimum_ticket_price?.display,
-    raw: ev,
-  };
-}
+// The pure mapping lives in ./eventbrite-map so a browser client can share it without
+// pulling in cheerio. Re-exported here so existing import sites are unaffected.
+export { extractAssignedJson, getResults, mapEbEvent } from "./eventbrite-map";
 
 /** One (location, query) crawl over its pages, via plain fetch. */
 async function scrapeCrawl(

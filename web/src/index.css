@@ -100,6 +100,12 @@ p { text-wrap: pretty; }
 .animate-fade-up { animation: fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-pop { animation: pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* ── Experience bar — the game level (separate from social points) ── */
+.xp-chip { display: inline-flex; align-items: center; gap: 5px; }
+.xp-lvl { font: 700 11px/1 ui-monospace, monospace; color: var(--accent); letter-spacing: 0.02em; white-space: nowrap; }
+.xp-track { width: 44px; height: 6px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; }
+.xp-fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+
 /* skeleton shimmer */
 .skeleton {
   background: linear-gradient(100deg, var(--surface) 30%, var(--elev-2) 50%, var(--surface) 70%);
@@ -167,6 +173,48 @@ p { text-wrap: pretty; }
 .shadows-icon:hover { background: var(--surface); color: var(--text); }
 .shadows-resize { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none;
   background: linear-gradient(135deg, transparent 50%, color-mix(in srgb, var(--gold) 50%, var(--border)) 50%); border-radius: 0 0 12px 0; }
+
+/* layer switcher — the discovery dial (shadows / spots / … more each stage) */
+.shadows-layers { display: flex; gap: 5px; padding: 6px 8px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--elev); scrollbar-width: none; }
+.shadows-layers::-webkit-scrollbar { display: none; }
+.shadows-layer { flex: 0 0 auto; padding: 3px 9px; border-radius: 999px; font: 600 11px/1 ui-sans-serif, system-ui; color: var(--muted); background: var(--surface); border: 1px solid var(--border); white-space: nowrap; transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease; }
+.shadows-layer.is-on { color: var(--accent-ink); background: color-mix(in srgb, var(--gold) 85%, white); border-color: var(--gold); }
+.shadows-layer:hover { border-color: color-mix(in srgb, var(--gold) 50%, var(--border)); }
+.shadows-place-sheet { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 6; max-height: 82%; overflow-y: auto; }
+
+/* mobbing — the live-movement toggle + the living map */
+.shadows-mob { flex: 0 0 auto; padding: 3px 10px; border-radius: 999px; font: 700 11px/1 ui-monospace, monospace; color: var(--muted); background: var(--surface); border: 1px solid var(--border); white-space: nowrap; }
+.shadows-mob.is-on { color: #fff; background: var(--ok); border-color: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+.mob-indicator { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; font: 600 11px/1.2 ui-monospace, monospace; color: var(--text); background: color-mix(in srgb, var(--ok) 16%, var(--elev)); border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--border)); backdrop-filter: blur(4px); }
+.mob-xp { font-weight: 700; color: var(--ok); }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-2); border: 1.5px solid var(--bg); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-2) 60%, transparent); animation: pulse-dot 2.2s infinite; }
+.trail-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 6px -1px color-mix(in srgb, var(--gold) 80%, transparent); }
+/* floating XP orbs — bob + glow so they read as collectible */
+.orb-marker { display: grid; place-items: center; width: 26px; height: 26px; font-size: 15px; cursor: pointer; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-2) 90%, transparent)); animation: orb-bob 2.4s ease-in-out infinite; }
+.orb-marker:hover { transform: scale(1.25); }
+@keyframes orb-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+/* lore billboards — SF-VC landmarks as little gold-plaqued monuments */
+.lore-marker { display: grid; place-items: center; width: 28px; height: 28px; cursor: pointer; border-radius: 8px 8px 8px 2px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--gold) 30%, var(--elev)), var(--elev));
+  border: 1.5px solid color-mix(in srgb, var(--gold) 60%, var(--border)); box-shadow: 0 2px 8px -2px rgb(0 0 0 / 0.5); }
+.lore-marker:hover { transform: scale(1.18); z-index: 3; }
+.lore-emoji { font-size: 15px; line-height: 1; }
+/* the P2P-mesh vision banner on the map */
+.mesh-banner { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 5; display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border-radius: 10px; font: 500 10.5px/1.3 ui-monospace, monospace; color: var(--text);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, var(--elev)), color-mix(in srgb, var(--gold) 16%, var(--elev)));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); backdrop-filter: blur(4px); }
+.mesh-banner b { color: var(--gold); }
+.mesh-banner span { flex: 1; }
+.mesh-x { color: var(--muted); font-size: 11px; } .mesh-x:hover { color: var(--text); }
+
+/* Founder Pokédex cards — rarity colours the frame (the "catch" is a person) */
+.pokedex-rarity { font: 700 9px/1 ui-sans-serif, system-ui; text-transform: uppercase; letter-spacing: 0.05em; }
+.rarity-common { border-color: var(--border); } .rarity-common .pokedex-rarity { color: var(--muted); }
+.rarity-uncommon { border-color: color-mix(in srgb, var(--ok) 55%, var(--border)); } .rarity-uncommon .pokedex-rarity { color: var(--ok); }
+.rarity-rare { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); } .rarity-rare .pokedex-rarity { color: var(--accent); }
+.rarity-epic { border-color: #a855f7; } .rarity-epic .pokedex-rarity { color: #a855f7; }
+.rarity-legendary { border-color: var(--gold); box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 18px -8px var(--gold); } .rarity-legendary .pokedex-rarity { color: var(--gold); }
 
 .shadows-body { position: relative; flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
 /* Size the map by FLEX — never position:absolute+inset. MapLibre stamps
