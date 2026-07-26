@@ -157,6 +157,52 @@ await step("Bob and Cara mutually invite and match", async () => {
   return (bf.friends || []).some((f) => f.id === cara.user.id); // already friends from intro OR now matched
 });
 
+// ── 11. Community detail: create → open → members-only ranking board (UI) ────
+await step("Alice creates a community and opens its per-community ranking board", async () => {
+  await alice.page.goto(`${B}/app/communities`, { waitUntil: "networkidle" });
+  const name = "AI Infra Community " + RID;
+  await alice.page.fill('input[placeholder*="community name"]', name);
+  await alice.page.click('button:has-text("Create")');
+  await alice.page.waitForTimeout(500);
+  await alice.page.locator(`a:has-text("${name}")`).first().click();
+  await alice.page.waitForSelector('[data-testid="community"]', { timeout: 8000 });
+  const hasBoard = (await alice.page.locator('[data-testid="community-rankings"]').count()) > 0;
+  // switching the metric tab keeps the board mounted
+  await alice.page.locator('[data-testid="community-metric-tabs"] >> text=Super-connectors').click().catch(() => {});
+  await alice.page.waitForTimeout(300);
+  return hasBoard && (await alice.page.locator('[data-testid="community-rankings"]').count()) > 0;
+});
+
+// ── 12. People-you-may-know: import a connection → suggestion → connect (UI) ──
+await step("An imported connection surfaces as people-you-may-know and connects", async () => {
+  // Alice imports a LinkedIn connection whose email is Cara's → Cara should surface
+  await api(alice, "post", "/api/integrations/linkedin/import", {
+    items: [{ externalId: "li:" + cara.user.email, kind: "connection", payload: { name: cara.user.displayName, email: cara.user.email } }],
+  });
+  await alice.page.goto(`${B}/app/integrations`, { waitUntil: "networkidle" });
+  await alice.page.waitForSelector('[data-testid="people-you-may-know"]', { timeout: 8000 }).catch(() => {});
+  const surfaced = (await alice.page.locator('[data-testid="people-you-may-know"]').count()) > 0;
+  if (surfaced) {
+    await alice.page.locator('[data-testid="people-you-may-know"] button:has-text("Connect")').first().click().catch(() => {});
+    await alice.page.waitForTimeout(500);
+  }
+  // verify a friend request went out (deterministic, via API)
+  const fr = await (await api(alice, "get", "/api/friends")).json();
+  const requested = (fr.pending || []).some((p) => p.id === cara.user.id) || (fr.friends || []).some((f) => f.id === cara.user.id);
+  return surfaced && requested;
+});
+
+// ── 13. AI networking agent: enable + switch to Autopilot (UI) ───────────────
+await step("Bob enables the networking agent and switches it to Autopilot", async () => {
+  await bob.page.goto(`${B}/app/agent`, { waitUntil: "networkidle" });
+  await bob.page.locator('[aria-checked]').first().click().catch(() => {}); // the enable switch
+  await bob.page.waitForTimeout(400);
+  await bob.page.click('button:has-text("Autopilot")').catch(() => {});
+  await bob.page.waitForTimeout(400);
+  const s = await (await api(bob, "get", "/api/me/agent")).json();
+  return s.enabled === true && s.mode === "auto";
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed, ${errs.length} page errors`);
 if (errs.length) console.log("  page errors:\n   " + errs.slice(0, 6).join("\n   "));
 await browser.close();
