@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGetEventsQuery } from "../api";
+import { allDestinations } from "../app/nav";
 
 type Cmd = { id: string; label: string; hint?: string; kbd?: string; run: () => void; group: string };
 
@@ -36,26 +37,19 @@ export function CommandPalette() {
 
   const go = (path: string) => () => { nav(path); setOpen(false); };
   const NAV: Cmd[] = useMemo(() => [
-    { id: "home", label: "Discover events", kbd: "G D", group: "Go", run: go("/discover") },
-    { id: "map", label: "Map", group: "Go", run: go("/map") },
-    { id: "board", label: "Shadows — the live board", group: "Go", run: go("/board") },
-    { id: "itin", label: "My itinerary", group: "Go", run: go("/itinerary") },
-    { id: "goals", label: "Goals", group: "Go", run: go("/goals") },
-    { id: "trophies", label: "Achievements", group: "Go", run: go("/achievements") },
-    { id: "media", label: "Moments (photos & videos)", group: "Go", run: go("/media") },
-    { id: "network", label: "Network hub", group: "Go", run: go("/network") },
-    { id: "graph", label: "Network graph", group: "Go", run: go("/network-graph") },
-    { id: "friends", label: "Friends", group: "Go", run: go("/friends") },
-    { id: "groups", label: "Groups & chat", group: "Go", run: go("/groups") },
-    { id: "intros", label: "Warm intros", group: "Go", run: go("/intros") },
-    { id: "mentors", label: "Mentors", group: "Go", run: go("/mentors") },
-    { id: "match", label: "Co-founder matching", group: "Go", run: go("/match") },
-    { id: "communities", label: "Communities", group: "Go", run: go("/communities") },
-    { id: "rankings", label: "Rankings", group: "Go", run: go("/leaderboard") },
-    { id: "agent", label: "AI networking agent", group: "Go", run: go("/agent") },
-    { id: "integrations", label: "Integrations", group: "Go", run: go("/integrations") },
-    { id: "me", label: "My profile", group: "Go", run: go("/me") },
-    { id: "host", label: "Host an event", group: "Action", run: go("/host") },
+    // Every destination comes from the nav config — the palette cannot fall behind
+    // the app, because there is no second list to update. The hint carries the
+    // section name, which the filter also matches on.
+    ...allDestinations().map((d) => ({
+      id: `go:${d.to}`,
+      label: d.label,
+      hint: d.section,
+      group: "Go",
+      run: go(d.to),
+    })),
+    // Not a destination: the board floats over whatever page you're on rather than
+    // being one, so it has no place in the section tabs.
+    { id: "board", label: "Shadows — the live board", hint: "City", group: "Go", run: go("/board") },
     { id: "newgoal", label: "Add a goal", group: "Action", run: go("/goals") },
     // Cross-domain: a full navigation through OUR handoff endpoint (relative), so
     // the reader lands on thebay.news already signed in.
@@ -75,7 +69,11 @@ export function CommandPalette() {
   }, [q, eventsData, nav]);
 
   const filtered = useMemo(() => {
-    const base = q.trim() ? NAV.filter((c) => c.label.toLowerCase().includes(q.toLowerCase())) : NAV;
+    // Match the hint too, so the section name is a search term: "people" finds
+    // Friends/Groups/Intros, "signal" finds Impact/Companies.
+    const base = q.trim()
+      ? NAV.filter((c) => `${c.label} ${c.hint ?? ""}`.toLowerCase().includes(q.toLowerCase()))
+      : NAV;
     return [...base, ...eventCmds];
   }, [q, NAV, eventCmds]);
 

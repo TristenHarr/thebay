@@ -495,9 +495,11 @@ export class D1Repo implements Repository {
     }
 
     // Every table that FK-references events(id); event_sources last so its rows ride along.
+    // event_tags carries HUMAN tags ('host'/'crowd') that no re-enrichment can
+    // reproduce, so a merge must move them rather than let CASCADE eat them.
     const FK_TABLES = [
       "rsvps", "reviews", "event_photos", "points_ledger", "goals", "review_obligations",
-      "subject_reviews", "checkin_tokens", "checkins", "media", "groups", "event_sources",
+      "subject_reviews", "checkin_tokens", "checkins", "media", "groups", "event_tags", "event_sources",
     ];
     let updated = 0;
     let merged = 0;

@@ -4,6 +4,7 @@ import { CATCH_ALL_CATEGORY } from "../core/models/category";
 import type { Logger } from "../util/logger";
 import type { Tagger, TaggableEvent, TagResult } from "./tagger";
 import { buildSystemPrompt, buildUserPayload, ResponseSchema } from "./prompt";
+import { extractJson } from "./json-llm";
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -27,19 +28,12 @@ function clamp(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
+/** Single source of truth for "get JSON out of a model reply" lives in json-llm;
+ *  this tagger wants a throw (the batch then degrades to the keyword fallback). */
 function robustJsonParse(content: string): unknown {
-  const stripped = content
-    .replace(/^\s*```(?:json)?/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    const a = stripped.indexOf("{");
-    const b = stripped.lastIndexOf("}");
-    if (a >= 0 && b > a) return JSON.parse(stripped.slice(a, b + 1));
-    throw new Error("could not parse JSON from model output");
-  }
+  const parsed = extractJson(content);
+  if (parsed === null) throw new Error("could not parse JSON from model output");
+  return parsed;
 }
 
 /**

@@ -107,7 +107,17 @@ export function parseSec(payload: any): IngestedStory[] {
   return out;
 }
 
-export async function fetchSec(fetchImpl: typeof fetch = fetch, nowMs: number = Date.now()): Promise<IngestedStory[]> {
+/**
+ * `onPayload` hands the raw search response to a second reader before it is
+ * reduced to headlines. `parseSec` throws away the CIK, the amounts and the
+ * related-persons list; `ingest/formd.ts` wants them, and this way it gets them
+ * without a second round trip to EDGAR. Optional — the news path is unchanged.
+ */
+export async function fetchSec(
+  fetchImpl: typeof fetch = fetch,
+  nowMs: number = Date.now(),
+  onPayload?: (form: string, payload: unknown) => void,
+): Promise<IngestedStory[]> {
   const out: IngestedStory[] = [];
   let failed = 0;
   // Sequential, spaced: EDGAR caps at 10 req/s and asks that you not hammer it.
@@ -117,7 +127,9 @@ export async function fetchSec(fetchImpl: typeof fetch = fetch, nowMs: number = 
         headers: { accept: "application/json", "user-agent": SEC_USER_AGENT },
       });
       if (!res.ok) throw new Error(`sec ${res.status}`);
-      out.push(...parseSec(await res.json()));
+      const payload = await res.json();
+      try { onPayload?.(form, payload); } catch { /* a second reader must never cost the story */ }
+      out.push(...parseSec(payload));
     } catch { failed++; }
   }
   if (failed === FORMS.length) throw new Error(`all ${failed} EDGAR form queries failed`);

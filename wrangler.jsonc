@@ -37,8 +37,19 @@
     { "binding": "SESSIONS", "id": "1712f93782154a81a62bc68c45b7cc3d" },
     { "binding": "OAUTH_STATE", "id": "bf725c0973b349beb986ed5445d48240" }
   ],
-  // Avatars + event photos.
-  "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "thebay-photos" }],
+  // Avatars + event photos. TILES holds the offline map packs (PMTiles basemap +
+  // the pedestrian routing graph) — R2 has zero egress fees, which is the only
+  // reason self-hosting a multi-hundred-MB pack is affordable.
+  //   npx wrangler r2 bucket create thebay-tiles
+  "r2_buckets": [
+    { "binding": "PHOTOS", "bucket_name": "thebay-photos" },
+    { "binding": "TILES", "bucket_name": "thebay-tiles" }
+  ],
+  // Semantic event search. Commented until the index exists, because a binding to
+  // a missing Vectorize index breaks `wrangler dev`. `Env.VECTORIZE` is optional
+  // and search degrades to FTS5 + keyword without it, so this is safe to enable late.
+  //   npx wrangler vectorize create events-v1 --dimensions=768 --metric=cosine
+  // "vectorize": [{ "binding": "VECTORIZE", "index_name": "events-v1" }],
   // Durable Objects: one per event group = real-time chat; one per geohash cell =
   // the live "shadows" board (sharded so no single hot object — infinitely scalable).
   "durable_objects": {

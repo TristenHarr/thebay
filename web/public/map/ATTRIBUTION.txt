@@ -1,0 +1,5 @@
+Glyphs: Noto Sans (SIL Open Font License 1.1) — SDF PBFs from protomaps/basemaps-assets.
+Sprite: protomaps/basemaps-assets sprites/v4 (BSD-3-Clause).
+Basemap data: © OpenStreetMap contributors (ODbL), tiled by Protomaps.
+
+Vendored by scripts/build-map-assets.mjs on 2026-07-26T10:15:56.681Z.

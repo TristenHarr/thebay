@@ -8,6 +8,14 @@ INGEST_TOKEN=dev-ingest-token
 DEV_LOGIN=1
 
 # ── Optional integrations (features degrade gracefully when unset) ─────────────
+# Platform OpenRouter key — event tagging, vibe prediction, natural-language
+# search, identity-match ranking. Every one of those has a deterministic fallback,
+# so the site is fully functional without this.
+# OPENROUTER_API_KEY=
+# OPENROUTER_MODEL_FAST=            # high-volume: query parsing, bulk tagging
+# OPENROUTER_MODEL_QUALITY=         # low-volume: vibe prose, identity ranking
+# LLM_DAILY_BUDGET_USD=5            # ceiling on platform-funded spend; over it, fall back
+
 # Cloudflare Access (email one-time-PIN login) — from your Zero Trust dashboard
 # ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 # ACCESS_AUD=<application-audience-tag>

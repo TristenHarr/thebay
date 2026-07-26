@@ -51,6 +51,34 @@ export interface Env {
    *  handles it; absent too ⇒ the deterministic hard-screen is the only gate. */
   OPENROUTER_MODERATION_KEY?: string;
   OPENROUTER_MODERATION_MODEL?: string;
+  /** Platform OpenRouter key — event tagging, vibe prediction, query understanding,
+   *  identity-match ranking. Absent ⇒ every one of those falls back to its
+   *  deterministic core, so the site works fully without it. Distinct from the
+   *  per-user BYO key in `agent_settings.ai_key`, which still wins where it's set. */
+  OPENROUTER_API_KEY?: string;
+  /** High-volume, latency-sensitive work: query parsing, bulk tagging. */
+  OPENROUTER_MODEL_FAST?: string;
+  /** Low-volume, quality-sensitive work: vibe prose, identity-match ranking. */
+  OPENROUTER_MODEL_QUALITY?: string;
+  /** Daily ceiling on platform-funded model spend. Absent ⇒ unguarded. A runaway
+   *  loop is a billing incident, so this is enforced in `completeJson`, not at
+   *  call sites. */
+  LLM_DAILY_BUDGET_USD?: string;
+  /** Semantic event search. Typed structurally for the same reason AI/ASSETS are —
+   *  `@cloudflare/workers-types` is not ambient here (tsconfig `types: ["node"]`).
+   *  Absent ⇒ search degrades to FTS5 + keyword, which is still a big upgrade. */
+  VECTORIZE?: {
+    query(
+      vector: number[],
+      opts?: { topK?: number; filter?: Record<string, unknown>; returnMetadata?: boolean | string },
+    ): Promise<{ matches: Array<{ id: string; score: number; metadata?: Record<string, unknown> }> }>;
+    upsert(vectors: Array<{ id: string; values: number[]; metadata?: Record<string, unknown> }>): Promise<unknown>;
+    deleteByIds(ids: string[]): Promise<unknown>;
+  };
+  /** Offline map packs (PMTiles basemap + the pedestrian routing graph). Served
+   *  with HTTP Range so the online map streams tiles from the same object the
+   *  offline download installs. */
+  TILES?: R2Bucket;
   // Media: Cloudflare Images / Stream (optional until configured)
   CF_ACCOUNT_ID?: string;
   IMAGES_TOKEN?: string;

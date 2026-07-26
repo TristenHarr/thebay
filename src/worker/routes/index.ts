@@ -9,6 +9,12 @@ import { aiRoutes } from "./ai";
 import { pushRoutes } from "./push";
 import { notesRoutes } from "./notes";
 import { shadowsRoutes } from "./shadows";
+import { searchRoutes } from "./search";
+import { vibesRoutes } from "./vibes";
+import { placesRoutes } from "./places";
+import { mapsRoutes } from "./maps";
+import { companiesRoutes } from "./companies";
+import { attributionRoutes } from "./attribution";
 // gen:imports (do not remove) — `npm run new:feature` inserts new route imports above this line
 
 /**
@@ -34,5 +40,13 @@ export const routeFactories: RouteFactory[] = [
   pushRoutes,
   notesRoutes,
   shadowsRoutes,
+  // Pre-registered by M0 so five parallel tracks never contend for this file.
+  // Each factory starts empty; its track fills it in.
+  searchRoutes, // Track A — hybrid search
+  vibesRoutes, // Track B — event vibes
+  placesRoutes, // Track C — crowd city map
+  mapsRoutes, // Track D — offline packs + walking nav
+  companiesRoutes, // Track E — companies + funding rounds
+  attributionRoutes, // Track E — outcomes + attribution
   // gen:registry (do not remove) — `npm run new:feature` inserts new factories above this line
 ];

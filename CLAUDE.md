@@ -63,7 +63,10 @@ Observability: `GET /api/scrape-status` (public — last run, totals, `stale` fl
 | `POST /api/admin/scrape-report` | record a run for `/api/scrape-status` |
 | `POST /api/admin/renormalize` | re-resolve city + fingerprint in place, dedup (run after `cities.json` changes) |
 | `POST /api/admin/prune-out-of-region` | drop confidently non-Bay events |
-| `POST /api/admin/retag` | re-tag whole catalog, REPLACING categories (run after the tagger changes) |
+| `POST /api/admin/retag` | legacy: re-tag whole catalog, REPLACING `categories`. **Superseded by `enrich`** — unbounded (`SELECT *` over every event) and writes only the legacy column |
+| `POST /api/admin/enrich?limit=&cursor=&force=&llm=0` | **the tagging job.** Bounded + resumable: tags one id-cursor slice into `event_tags` (model → `KeywordTagger` fallback), write-throughs `events.categories`, and embeds into Vectorize when bound. Loop on `nextCursor` until `scanned` is 0 |
+| `POST /api/admin/reindex?limit=&cursor=&force=` | backfill/repair `events_fts` (triggers keep it in sync for live writes; this is for pre-migration rows) |
+| `POST /api/admin/tags` | add/edit `tag_vocab` rows — a new tag is a row, not a redeploy |
 | `POST /api/admin/run-autopilot` | warm-intros autopilot (also on a cron) |
 | `POST /api/admin/geocode` | backfill coordinates |
 
@@ -75,8 +78,20 @@ Observability: `GET /api/scrape-status` (public — last run, totals, `stale` fl
   is NOT unique. Changing `cities.json` re-resolves the embedded city → new fingerprint →
   the next scrape would re-insert as a **duplicate**. Fix stored rows with `renormalize` FIRST.
 - **Ingest `mergeEvents` UNIONS categories** — a push can add a tag but never remove a stale
-  one. To correct tags across the catalog, run `retag` (it REPLACES).
+  one. To correct tags across the catalog, run `enrich` (it REPLACES machine tags).
 - **Tagger matches on word boundaries**, not substrings (else `ai`⊂"email", `vc`⊂"service").
+- **`events.categories` is now DERIVED.** The truth is `event_tags` + `tag_vocab`
+  (migration 0014); `SearchRepo` write-throughs the JSON column from the `topic:` facet
+  because `/api/events`, the static dashboard and `src/news/curate.ts` still read it.
+  Write tags through `SearchRepo`, never `UPDATE events SET categories` directly — and
+  note `retag` does exactly that, which is why `enrich` replaces it.
+- **`event_tags.source` is provenance, not decoration.** `enrich` deletes and rewrites
+  `'keyword'`/`'llm'` rows and must never touch `'host'`/`'crowd'` — a human's label
+  cannot be recomputed.
+- **`events_fts` is kept in sync by SQL triggers** (0014), not by application discipline,
+  so any writer leaves it correct. `body` includes tag labels, so changing an event's tags
+  re-indexes it. Rank with `bm25(events_fts, 8.0, 1.0)`; never pass user text into `MATCH`
+  (it's a query language — use `core/search/fts.ts`).
 - **`@cloudflare/workers-types` are NOT ambient** (tsconfig `types: ["node"]`) — import
   `D1Database` / `ScheduledController` / etc. explicitly.
 - Worker default export is `{ fetch, scheduled }` (cron), not a bare Hono app — tests call `app.fetch`.

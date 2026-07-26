@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { runNewsIngest } from "../src/news/ingest";
 import { makeTestEnv } from "./helpers/app";
 import { NewsRepo } from "../src/storage/d1/news-repo";
+import { CompaniesRepo } from "../src/storage/d1/companies-repo";
 import { timeAgo, longDate, rfc822 } from "../src/news/render/time";
 import { formatBody, excerpt } from "../src/news/render/text";
 import { toHtml } from "../src/news/render/escape";
@@ -42,8 +43,32 @@ const PREVIEW_HTML = `<html lang="en"><head>
   <meta property="og:site_name" content="Example">
 </head></html>`;
 
-/** Route a fake fetch by URL, with per-host failure injection. */
-function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?: boolean; failPreviews?: boolean; failGithub?: boolean; failSec?: boolean; failResearch?: boolean; failFda?: boolean } = {}) {
+/** A Form D primary_doc.xml, as EDGAR serves it. Mined for the funding graph. */
+const formDoc = (cik: string, name: string, amount: string) => `<?xml version="1.0"?>
+<edgarSubmission>
+  <submissionType>D</submissionType>
+  <primaryIssuer>
+    <cik>${cik}</cik>
+    <entityName>${name}</entityName>
+    <issuerAddress><city>San Francisco</city><stateOrCountry>CA</stateOrCountry></issuerAddress>
+    <yearOfInc><value>2024</value></yearOfInc>
+  </primaryIssuer>
+  <relatedPersonsList>
+    <relatedPersonInfo>
+      <relatedPersonName><firstName>Ann</firstName><lastName>Lee</lastName></relatedPersonName>
+      <relatedPersonRelationshipList><relationship>Executive Officer</relationship></relatedPersonRelationshipList>
+    </relatedPersonInfo>
+  </relatedPersonsList>
+  <offeringData>
+    <industryGroup><industryGroupType>Technology</industryGroupType></industryGroup>
+    <offeringSalesAmounts><totalOfferingAmount>${amount}</totalOfferingAmount><totalAmountSold>${amount}</totalAmountSold></offeringSalesAmounts>
+  </offeringData>
+</edgarSubmission>`;
+
+/** Route a fake fetch by URL, with per-host failure injection.
+ *  `failFormD` breaks the FIRST filer's primary_doc.xml only — the point being
+ *  that it costs that one filing and nothing else. */
+function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?: boolean; failPreviews?: boolean; failGithub?: boolean; failSec?: boolean; failResearch?: boolean; failFda?: boolean; failFormD?: boolean } = {}) {
   return (async (input: any) => {
     const url = String(typeof input === "string" ? input : input.url ?? input);
     const json = (b: any) => new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
@@ -66,8 +91,22 @@ function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?:
     }
     if (url.includes("efts.sec.gov")) {
       if (opts.failSec) return new Response("", { status: 403 });
-      return json({ hits: { hits: [{ _source: { ciks: ["1"], display_names: ["Acme Inc  (CIK 0000001)"], form: "D",
-        file_date: "2026-07-21", biz_locations: ["San Francisco, CA"], adsh: "0000001-26-000001" } }] } });
+      return json({ hits: { hits: [
+        { _source: { ciks: ["1"], display_names: ["Acme Inc  (CIK 0000001)"], form: "D",
+          file_date: "2026-07-21", biz_locations: ["San Francisco, CA"], adsh: "0000001-26-000001" } },
+        { _source: { ciks: ["2"], display_names: ["Zeta Bio Inc  (CIK 0000002)"], form: "D",
+          file_date: "2026-07-20", biz_locations: ["Oakland, CA"], adsh: "0000002-26-000002" } },
+      ] } });
+    }
+    // The structured filing behind an SEC story (Track E). Matched on the document
+    // name, not the archive path — the story's own -index.htm lives there too and
+    // is a link-preview fetch.
+    if (url.includes("primary_doc.xml")) {
+      if (url.includes("/data/1/")) {
+        if (opts.failFormD) return new Response("", { status: 500 });
+        return new Response(formDoc("0000001", "Acme Inc", "4200000"), { status: 200 });
+      }
+      return new Response(formDoc("0000002", "Zeta Bio Inc", "1500000"), { status: 200 });
     }
     if (url.includes("api.github.com")) {
       if (opts.failGithub) return new Response("rate limited", { status: 403 });
@@ -239,6 +278,50 @@ describe("the new sources are isolated like every other one", () => {
     expect(r.failures.join(" ")).toMatch(/github/);
     expect(r.created).toBeGreaterThan(0);
     expect((await repo.feed({ src: "all", sort: "new", limit: 50, offset: 0 })).stories.some((s) => s.title === "A real HN story")).toBe(true);
+  });
+
+  it("mines the Form D behind each SEC story into the funding graph", async () => {
+    const { env } = makeTestEnv();
+    const r = await runNewsIngest(env, fakeFetch());
+    expect(r.failures).toEqual([]);
+    expect(r.filings).toBe(2);
+    expect(r.companies).toBe(2);
+
+    const repo = new CompaniesRepo(env.DB);
+    const acme = await repo.bySlug("acme");
+    expect(acme!.company).toMatchObject({ cik: "1", city: "San Francisco", industry: "Technology", yearFounded: 2024 });
+    expect(acme!.rounds[0]).toMatchObject({ amountUsd: 4_200_000, source: "sec", externalId: "0000001-26-000001" });
+    // the person on the filing is stored UNRESOLVED — a name, never an account
+    expect(acme!.people).toEqual([expect.objectContaining({ personName: "Ann Lee", role: "Executive Officer", confirmed: false, handle: null })]);
+
+    // the news story is linked to its company, so the front page can show the money
+    const story = (await new NewsRepo(env.DB).feed({ src: "sec", sort: "new", limit: 10, offset: 0 })).stories.find((s) => s.title.startsWith("Acme"))!;
+    expect((await repo.factsForStories([story.id])) [story.id]).toMatchObject({ slug: "acme", amountUsd: 4_200_000, roundSource: "sec" });
+  });
+
+  it("spends the Form D budget only on filings it has never seen", async () => {
+    const { env } = makeTestEnv();
+    await runNewsIngest(env, fakeFetch());
+    const second = await runNewsIngest(env, fakeFetch());
+    expect(second.filings).toBe(0); // both accessions already stored
+    expect(second.companies).toBe(0);
+    expect(second.failures).toEqual([]);
+  });
+
+  it("a broken primary_doc.xml costs ONE filing, not the harvest", async () => {
+    const { env } = makeTestEnv();
+    const repo = new NewsRepo(env.DB);
+    const r = await runNewsIngest(env, fakeFetch({ failFormD: true }));
+
+    expect(r.filings).toBe(1); // Zeta still landed
+    expect(r.failures).toEqual(["formd:0000001-26-000001"]);
+    expect(await new CompaniesRepo(env.DB).bySlug("zeta-bio")).toBeTruthy();
+    expect(await new CompaniesRepo(env.DB).bySlug("acme")).toBeNull();
+    // and the news side is entirely unaffected
+    expect(r.created).toBeGreaterThan(0);
+    const { stories } = await repo.feed({ src: "all", sort: "new", limit: 50, offset: 0 });
+    expect(stories.some((s) => s.title === "A real HN story")).toBe(true);
+    expect(stories.some((s) => s.title.startsWith("Acme"))).toBe(true); // the STORY survived
   });
 
   it("stores GitHub repos and Show HN under their own origins", async () => {

@@ -54,9 +54,15 @@ export function EventPage({ me }: { me: any }) {
           ) : (
             <Link to={`/event/${id}/checkin`}><Button variant="ghost">✅ Check in</Button></Link>
           )}
+          {/* The vibe read is the whole point of showing up informed — link it from
+              the one screen people actually open before deciding to go. */}
+          <Link to={`/event/${id}/vibe`}><Button variant="ghost">🌡️ Read the room</Button></Link>
         </div>
       ) : (
-        <Link to="/signin" className="mt-4 inline-block"><Button>Sign in to RSVP</Button></Link>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Link to="/signin"><Button>Sign in to RSVP</Button></Link>
+          <Link to={`/event/${id}/vibe`}><Button variant="ghost">🌡️ Read the room</Button></Link>
+        </div>
       )}
 
       <div className="mt-3 flex gap-5 font-mono text-sm text-muted">

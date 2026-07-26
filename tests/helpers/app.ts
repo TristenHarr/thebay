@@ -18,11 +18,42 @@ function memoryKV() {
     _map: m,
   } as any;
 }
+/** In-memory R2 double. Implements the slice of the API our routes actually use:
+ *  put/get/delete plus `head`, `list` and — crucially — RANGED `get`, without which
+ *  a test of the map-pack route would pass while production served whole packs. */
 function memoryR2() {
   const m = new Map<string, any>();
+  // Bodies arrive as ArrayBuffer | Uint8Array | string; normalise so ranges can slice.
+  const bytesOf = (v: any): Uint8Array | null => {
+    if (v instanceof Uint8Array) return v;
+    if (v instanceof ArrayBuffer) return new Uint8Array(v);
+    if (typeof v === "string") return new TextEncoder().encode(v);
+    return null;
+  };
+  const meta = (k: string, o: any) => ({
+    key: k, size: o.size, etag: o.etag, httpEtag: `"${o.etag}"`, uploaded: o.uploaded, httpMetadata: o.httpMetadata,
+  });
+  let seq = 0;
   return {
-    async put(k: string, v: any, opts?: any) { m.set(k, { body: v, httpMetadata: opts?.httpMetadata }); },
-    async get(k: string) { const o = m.get(k); return o ? { body: o.body, httpMetadata: o.httpMetadata } : null; },
+    async put(k: string, v: any, opts?: any) {
+      const b = bytesOf(v);
+      m.set(k, { body: v, bytes: b, size: b ? b.byteLength : 0, etag: `e${++seq}`, uploaded: new Date("2026-07-26T08:00:00Z"), httpMetadata: opts?.httpMetadata });
+    },
+    async get(k: string, opts?: any) {
+      const o = m.get(k);
+      if (!o) return null;
+      const r = opts?.range;
+      if (r && o.bytes) {
+        const slice = o.bytes.subarray(r.offset, r.offset + r.length);
+        return { ...meta(k, o), body: slice, range: r };
+      }
+      return { ...meta(k, o), body: o.body };
+    },
+    async head(k: string) { const o = m.get(k); return o ? meta(k, o) : null; },
+    async list(opts?: any) {
+      const prefix = opts?.prefix ?? "";
+      return { objects: [...m.entries()].filter(([k]) => k.startsWith(prefix)).map(([k, o]) => meta(k, o)), truncated: false, delimitedPrefixes: [] };
+    },
     async delete(k: string) { m.delete(k); },
     _map: m,
   } as any;
@@ -49,6 +80,7 @@ export function makeTestEnv(overrides: Record<string, any> = {}) {
     SESSIONS: memoryKV(),
     OAUTH_STATE: memoryKV(),
     PHOTOS: memoryR2(),
+    TILES: memoryR2(), // offline map packs (PMTiles basemap + walk graph)
     GROUP_ROOM: {} as any,
     ASSETS: {
       fetch: async (r: Request) => {

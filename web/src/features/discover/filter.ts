@@ -2,10 +2,38 @@
  * Pure filtering logic for Discover — extracted so the world's-best filtering is
  * unit-testable with a fixed `now` (no clock flakiness). The component wires these
  * to React state; the math lives here.
+ *
+ * Discover now searches SERVER-side (`POST /api/search`), so most of this file is
+ * the OFFLINE/CACHED path: when the search request fails — a flaky connection, a
+ * cold Worker — the screen falls back to whatever `/api/events` is already in the
+ * RTK Query cache and filters it here, exactly as it used to. Same functions, same
+ * tests; they just stopped being the primary path. `serverRange` is the bridge:
+ * it maps the same UI date chips onto the server's window vocabulary so both paths
+ * mean the same thing by "this weekend".
  */
 export type DateKey = "today" | "weekend" | "7d" | "30d" | "upcoming" | "all";
 export type TimeKey = "any" | "morning" | "afternoon" | "evening";
 export const DAY = 86400000;
+
+/** The server's window vocabulary (src/core/search/window.ts). */
+export type ServerWindow = "tonight" | "today" | "weekend" | "7d" | "30d";
+
+/**
+ * Translate a date chip (and an optional explicit trip range) into the
+ * `/api/search` filter fields. A trip is a literal date range and wins; "all"
+ * means "including the past", which the server expresses as an open `from`.
+ */
+export function serverRange(
+  key: DateKey,
+  trip: { from: string; to: string } | null,
+): { window?: ServerWindow; from?: string; to?: string } {
+  if (trip?.from && trip?.to) {
+    return { from: new Date(trip.from).toISOString(), to: new Date(new Date(trip.to).getTime() + DAY).toISOString() };
+  }
+  if (key === "all") return { from: "1970-01-01T00:00:00.000Z" };
+  if (key === "upcoming") return {};
+  return { window: key };
+}
 
 /** Does an event fall inside the selected date window (or explicit trip range)? */
 export function inDateWindow(startUtc: string, key: DateKey, trip: { from: string; to: string } | null, now: number = Date.now()): boolean {

@@ -17,6 +17,9 @@ import { fetchHn, fetchHnTags } from "./hn";
 import { fetchLobsters } from "./lobsters";
 import { fetchGithub } from "./github";
 import { fetchSec } from "./sec";
+import { harvestFormD, parseSecFilings, FORMD_BUDGET, type SecFilingRef } from "./formd";
+import { CompaniesRepo } from "../../storage/d1/companies-repo";
+import { AttributionRepo } from "../../storage/d1/attribution-repo";
 import { fetchReddit } from "./reddit";
 import { fetchResearch } from "./research";
 import { fetchFda } from "./fda";
@@ -37,6 +40,10 @@ export interface IngestReport {
   events: number;
   previewed: number;
   summarized: number;
+  /** Form D filings whose structured detail was mined this tick (Track E). */
+  filings: number;
+  /** Companies created from those filings. */
+  companies: number;
   failures: string[];
 }
 
@@ -50,12 +57,18 @@ export async function runNewsIngest(env: Env, fetchImpl: typeof fetch = fetch): 
   const failures: string[] = [];
   const all: IngestedStory[] = [];
 
+  // Form D refs harvested as a side-effect of the SEC news query — same response,
+  // no extra request. Mined for structured data after the story pass (see below).
+  const formdRefs: SecFilingRef[] = [];
+
   const sources: [string, () => Promise<IngestedStory[]>][] = [
     ["hn", () => fetchHn(fetchImpl)],
     ["hn-tags", () => fetchHnTags(fetchImpl)],
     ["lobsters", () => fetchLobsters(fetchImpl)],
     ["github", () => fetchGithub(fetchImpl)],
-    ["sec", () => fetchSec(fetchImpl)],
+    ["sec", () => fetchSec(fetchImpl, Date.now(), (form, payload) => {
+      if (form === "D") formdRefs.push(...parseSecFilings(payload));
+    })],
     ["reddit", () => fetchReddit(env, fetchImpl)],
     ["research", () => fetchResearch(fetchImpl)],
     ["fda", () => fetchFda(fetchImpl)],
@@ -79,6 +92,37 @@ export async function runNewsIngest(env: Env, fetchImpl: typeof fetch = fetch): 
   let events = 0;
   try { events = await repo.syncEventStories(); }
   catch (err) { failures.push(`events: ${(err as Error).message}`); }
+
+  // ── Form D detail (Track E) ────────────────────────────────────────────────
+  // The news story is already stored above; this is the structured filing behind
+  // it. Bounded at FORMD_BUDGET detail fetches per tick, and only for accessions
+  // we have never seen — otherwise the budget would be spent re-reading the same
+  // filings forever. One bad primary_doc.xml costs one filing (harvestFormD
+  // returns null per filing), never the run.
+  let filings = 0;
+  let companies = 0;
+  try {
+    const companiesRepo = new CompaniesRepo(env.DB);
+    const attribution = new AttributionRepo(env.DB);
+    const fresh = new Set(await companiesRepo.unseenAccessions(formdRefs.map((r) => r.adsh)));
+    const harvest = await harvestFormD(formdRefs.filter((r) => fresh.has(r.adsh)), fetchImpl, FORMD_BUDGET);
+    for (const f of harvest.failures) failures.push(f);
+    for (const filing of harvest.filings) {
+      const stored = await companiesRepo.upsertFromFormD(filing);
+      if (!stored) continue; // skip the bad item
+      filings++;
+      if (stored.companyCreated) companies++;
+      // The filing is now public record, so any cause somebody had ALREADY claimed
+      // for this round becomes SEC-corroborated. Bare correlations are untouched —
+      // the ledger refuses that promotion.
+      await attribution.corroborateSecRound(stored.roundId);
+    }
+    // Attach each filing's story to its company so the front page can render
+    // "Acme Robotics — $4.2M" instead of a bare headline.
+    if (filings > 0) await companiesRepo.linkStoriesByAccession();
+  } catch (err) {
+    failures.push(`formd: ${(err as Error).message}`);
+  }
 
   // Harvest link previews BEFORE summarizing, so the summarizer can fall back to
   // a freshly-fetched description. Bounded per run to stay a polite crawler.
@@ -104,5 +148,5 @@ export async function runNewsIngest(env: Env, fetchImpl: typeof fetch = fetch): 
     failures.push(`summarize: ${(err as Error).message}`);
   }
 
-  return { fetched: all.length, feeds: (feedsJson as FeedConfig[]).length, created, merged, refreshed, events, previewed, summarized, failures };
+  return { fetched: all.length, feeds: (feedsJson as FeedConfig[]).length, created, merged, refreshed, events, previewed, summarized, filings, companies, failures };
 }

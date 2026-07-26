@@ -518,12 +518,16 @@ ${queue.length
             ${q.dead ? html`<span class="dot">·</span><span style="color:var(--warn)">hidden</span>` : ""}
           </div>
           <div class="comment-body">
-            <a href="/item/${q.storyId}${q.storySlug ? "/" + q.storySlug : ""}">${q.title.slice(0, 200)}</a>
+            ${q.targetType === "place"
+        ? html`<a href="${chrome.eventsOrigin}/app/city?place=${q.targetId}">${q.title.slice(0, 200)}</a>`
+        : html`<a href="/item/${q.storyId}${q.storySlug ? "/" + q.storySlug : ""}">${q.title.slice(0, 200)}</a>`}
           </div>
           <div class="comment-meta mono" style="margin-top:6px">
             ${q.targetType === "story"
         ? (q.dead ? action("unhide", "unhide", "story", q.targetId) : action("hide", "hide", "story", q.targetId, true))
-        : (q.dead ? action("revive", "revive", "comment", q.targetId) : action("kill", "kill", "comment", q.targetId, true))}
+        : q.targetType === "place"
+          ? (q.dead ? action("unhide", "unhide_place", "place", q.targetId) : action("hide", "hide_place", "place", q.targetId, true))
+          : (q.dead ? action("revive", "revive", "comment", q.targetId) : action("kill", "kill", "comment", q.targetId, true))}
             ${q.handle ? html`<span class="dot">·</span>${action("ban author", "ban", "user", q.handle, true)}` : ""}
           </div>
         </div>`)
@@ -567,6 +571,10 @@ app.post("/moderation/act", optionalAuth, requireAdmin, async (c) => {
     case "unhide": await mod.unhideStory(targetId, actorId); break;
     case "kill": await mod.killComment(targetId, actorId); break;
     case "revive": await mod.reviveComment(targetId, actorId); break;
+    // Crowd-map pins share this queue — a bad parking spot is a moderation
+    // problem exactly like a bad link, and one queue is better than two.
+    case "hide_place": await mod.hidePlace(targetId, actorId); break;
+    case "unhide_place": await mod.unhidePlace(targetId, actorId); break;
     case "block_domain": await mod.blockDomain(targetId, actorId); break;
     case "ban": {
       // The form carries a handle; resolve it rather than trusting an id.

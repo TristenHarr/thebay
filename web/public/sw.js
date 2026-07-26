@@ -19,15 +19,24 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   // Never cache API/auth — always live.
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
+  // Offline map packs are hundreds of megabytes and are fetched with Range. The
+  // Cache API can neither store a 206 nor satisfy a Range from a cached body, so
+  // touching /tiles/ here would break the vector map AND blow the quota. They are
+  // installed deliberately into OPFS instead (web/src/offline/opfs.ts).
+  if (url.pathname.startsWith("/tiles/")) return;
   // Only handle our own app scope.
   if (!url.pathname.startsWith("/app/")) return;
+  // Byte-range requests can't be replayed from the Cache API — always pass through.
+  if (e.request.headers.has("range")) return;
 
   // Navigations: network-first, fall back to the cached shell offline.
   if (e.request.mode === "navigate") {
     e.respondWith(fetch(e.request).catch(() => caches.match(SHELL)));
     return;
   }
-  // Static assets: cache-first, then populate.
+  // Static assets: cache-first, then populate. This is what makes /app/map/…
+  // (the SDF glyph PBFs and the sprite sheet) available offline for free — they
+  // are served from our own origin precisely so they land inside this predicate.
   e.respondWith(
     caches.match(e.request).then((hit) =>
       hit || fetch(e.request).then((res) => {

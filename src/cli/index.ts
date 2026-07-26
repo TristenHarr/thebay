@@ -19,6 +19,12 @@ Commands:
                         Dump ALL events to JSON (default data/events.json).
   bundle [--out <file>] [--site-url <url>]
                         Build a self-contained embeddable HTML widget (iframe-ready).
+  import-places [--url <u>] [--token <t>] [--limit <n>] [--source <key>]...
+                [--dry-run] [--out <file>]
+                        Seed the crowd city map from DataSF (parking meters,
+                        off-street lots/garages, street sweeping). Dataset ids
+                        are resolved via the Socrata catalog at runtime;
+                        idempotent on external_ref.
   migrate               Create/upgrade the SQLite schema and exit.
   help                  Show this help.
 
@@ -51,6 +57,8 @@ async function main(): Promise<void> {
       return (await import("./geocode")).geocodeCommand(rest);
     case "deploy":
       return (await import("./deploy")).deployCommand(rest);
+    case "import-places":
+      return (await import("./import-places")).importPlacesCommand(rest);
     case "migrate": {
       const { createRepository } = await import("../storage");
       const repo = createRepository();

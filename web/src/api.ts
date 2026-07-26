@@ -10,7 +10,14 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 export const api = createApi({
   reducerPath: "api",
   baseQuery: fetchBaseQuery({ baseUrl: "/", credentials: "same-origin" }),
-  tagTypes: ["Me", "Events", "Event", "Goals", "Friends", "Groups", "Group", "Rankings", "Intros", "Mentors", "Match", "Media", "Communities", "Obligations", "Integrations", "Achievements", "Agent", "Reviews", "Notes", "Shadows", "MyShadow"],
+  tagTypes: [
+    "Me", "Events", "Event", "Goals", "Friends", "Groups", "Group", "Rankings", "Intros", "Mentors",
+    "Match", "Media", "Communities", "Obligations", "Integrations", "Achievements", "Agent", "Reviews",
+    "Notes", "Shadows", "MyShadow",
+    // Reserved by M0 for the parallel tracks — declared up front so no two tracks
+    // have to edit this line.
+    "Search", "Vibes", "Places", "PlaceKinds", "MapPacks", "Companies", "Rounds", "Outcomes", "Attribution",
+  ],
   endpoints: (b) => ({
     // auth + profile
     getMe: b.query<{ user: any | null; points?: number }, void>({ query: () => "api/me", providesTags: ["Me"] }),
@@ -87,7 +94,7 @@ export const api = createApi({
     getMyShadow: b.query<{ active: { id: string; cell: string } | null }, void>({ query: () => "api/shadows/mine", providesTags: ["MyShadow"] }),
     postShadow: b.mutation<{ ok: boolean; id: string; cell: string; expiresAt: string; replaced: any }, { lat: number; lng: number; kind: string; body?: string; mediaKey?: string; streamId?: string; connectionUserId?: string }>({
       query: (body) => ({ url: "api/shadows", method: "POST", body }),
-      invalidatesTags: ["Shadows", "MyShadow"],
+      invalidatesTags: ["Shadows", "MyShadow", "Me", "Achievements"], // casting awards points + badges
     }),
     reactShadow: b.mutation<{ ok: boolean }, { id: string; emoji: string; on?: boolean }>({ query: ({ id, ...body }) => ({ url: `api/shadows/${id}/react`, method: "POST", body }), invalidatesTags: ["Shadows"] }),
     reportShadow: b.mutation<{ ok: boolean }, string>({ query: (id) => ({ url: `api/shadows/${id}/report`, method: "POST" }), invalidatesTags: ["Shadows"] }),
@@ -111,6 +118,172 @@ export const api = createApi({
     connectIntegration: b.mutation<any, { provider: string; token?: any }>({ query: ({ provider, token }) => ({ url: `api/integrations/${provider}/connect`, method: "POST", body: token || {} }), invalidatesTags: ["Integrations"] }),
     importIntegration: b.mutation<{ imported: number; total: number }, { provider: string; ics?: string; items?: any[] }>({ query: ({ provider, ...body }) => ({ url: `api/integrations/${provider}/import`, method: "POST", body }), invalidatesTags: ["Integrations"] }),
     subscribeCalendar: b.mutation<{ url: string }, void>({ query: () => ({ url: "api/me/calendar/subscribe", method: "POST" }) }),
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Parallel-track regions. Each track appends ONLY inside its own block, so
+    // five agents can edit this file without contending for the same lines.
+    // Keep the markers even when a block is empty.
+    // ─────────────────────────────────────────────────────────────────────────
+    // track:A search — hybrid FTS5 + vector search, NL query understanding
+    // A POST endpoint used as a QUERY: the request is a structured document
+    // (free-text + facet arrays + a window), which does not survive a query string
+    // legibly, and RTK Query caches a POST `b.query` by its serialized arg exactly
+    // as it does a GET. Discover keeps 3,000 events out of the browser this way.
+    searchEvents: b.query<
+      {
+        query: { raw: string; source: "llm" | "deterministic"; intent: string; semanticQuery: string; filters: any; applied: any; relaxed: boolean };
+        events: any[];
+        total: number;
+        facets: { tags: Array<{ value: string; facet: string; label: string; emoji: string | null; color: string | null; count: number }>; cities: Array<{ value: string; count: number }>; sources: Array<{ value: string; count: number }> };
+        used: { fts: boolean; vector: boolean };
+        limit: number;
+        offset: number;
+        nextOffset: number | null;
+      },
+      {
+        q?: string;
+        filters?: { free?: boolean; tags?: string[]; near?: string; cities?: string[]; sources?: string[]; window?: string; from?: string; to?: string; minScore?: number };
+        sort?: "relevance" | "soonest" | "interesting";
+        limit?: number;
+        offset?: number;
+        understand?: boolean;
+        semantic?: boolean;
+      }
+    >({
+      query: (body) => ({ url: "api/search", method: "POST", body }),
+      providesTags: ["Search"],
+    }),
+    // The live tag vocabulary (tag_vocab). Facet chips render from THIS, so adding
+    // a tag is a row in D1 — no redeploy of the Worker or the app.
+    getSearchTags: b.query<{ tags: any[]; facets: Record<string, any[]> }, void>({
+      query: () => "api/search/tags",
+      providesTags: ["Search"],
+    }),
+    // end:A
+    // track:B vibes — predicted + crowd-reported event vibe profiles
+    // The card always resolves (the server materialises a deterministic prediction
+    // on first read), so callers never need a "no vibe" branch for a real event.
+    getVibe: b.query<{ vibe: any; myReport: any | null; canReport: boolean }, string>({
+      query: (id) => `api/events/${id}/vibe`,
+      providesTags: (_r, _e, id) => [{ type: "Vibes", id }],
+    }),
+    // Reporting a room you checked into pays points, so Me/Achievements refresh too.
+    reportVibe: b.mutation<{ ok: boolean; verified: boolean; vibe: any }, { eventId: string; energy: number; formality: number; intimacy: number; talkRatio: number; signal: number; approachability: number; crowd?: Record<string, number>; tags?: string[]; worthIt?: number }>({
+      query: ({ eventId, ...body }) => ({ url: `api/events/${eventId}/vibe/report`, method: "POST", body }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Vibes", id: a.eventId }, "Vibes", "Me", "Achievements"],
+    }),
+    getVibePrompts: b.query<{ pending: Array<{ eventId: string; title: string; startUtc: string; checkedInAt: string }> }, void>({
+      query: () => "api/me/vibe-prompts",
+      providesTags: ["Vibes"],
+    }),
+    // Axis ranges + best-for tags as a query string, e.g. "?signalMin=70&bestFor=raising".
+    searchVibes: b.query<{ vibes: any[]; count: number }, string | void>({
+      query: (qs) => `api/vibes${qs || ""}`,
+      providesTags: ["Vibes"],
+    }),
+    // end:B
+    // track:C places — crowd city map, parking, community-proposed kinds
+    // The taxonomy IS data: `status=proposed` drives the ballot, `active` is the
+    // layer switcher. Each kind ships its own declarative form (`fields`).
+    getPlaceKinds: b.query<{ kinds: any[]; ratifyVotes: number }, string | void>({
+      query: (status) => `api/place-kinds${status ? `?status=${status}` : ""}`,
+      providesTags: ["PlaceKinds"],
+    }),
+    proposePlaceKind: b.mutation<{ ok: boolean; kind: any }, { label: string; emoji: string; color?: string; category?: string; halfLifeHours?: number; fields?: any[] }>({
+      query: (body) => ({ url: "api/place-kinds", method: "POST", body }),
+      invalidatesTags: ["PlaceKinds"],
+    }),
+    votePlaceKind: b.mutation<{ ok: boolean; votes: number; status: string; ratified: boolean }, string>({
+      query: (id) => ({ url: `api/place-kinds/${id}/vote`, method: "POST" }),
+      invalidatesTags: ["PlaceKinds"],
+    }),
+    // A viewport is a bounded set of geohash cells (same shape as shadows).
+    getPlaces: b.query<{ places: any[] }, { cells: string; kinds?: string }>({
+      query: ({ cells, kinds }) => `api/places?cells=${cells}${kinds ? `&kinds=${kinds}` : ""}`,
+      providesTags: ["Places"],
+    }),
+    getPlacesNear: b.query<{ places: any[] }, { lat: number; lng: number; km?: number; kinds?: string }>({
+      query: ({ lat, lng, km, kinds }) => `api/places/near?lat=${lat}&lng=${lng}${km ? `&km=${km}` : ""}${kinds ? `&kinds=${kinds}` : ""}`,
+      providesTags: ["Places"],
+    }),
+    getPlace: b.query<{ place: any; reports: any[]; difficulty: any; parking: any }, string>({
+      query: (id) => `api/places/${id}`,
+      providesTags: (_r, _e, id) => [{ type: "Places", id }],
+    }),
+    // Pinning + confirming pay points, so Me/Achievements refresh too.
+    addPlace: b.mutation<{ ok: boolean; place: any }, { kindId: string; name?: string; address?: string; attrs?: Record<string, unknown>; lat: number; lng: number; pinLat?: number; pinLng?: number }>({
+      query: (body) => ({ url: "api/places", method: "POST", body }),
+      invalidatesTags: ["Places", "Me", "Achievements"],
+    }),
+    reportPlace: b.mutation<{ ok: boolean; confirms: number; disputes: number }, { id: string; verdict: "confirm" | "dispute" | "update" | "tip"; attrs?: Record<string, unknown>; body?: string; lat: number; lng: number }>({
+      query: ({ id, ...body }) => ({ url: `api/places/${id}/report`, method: "POST", body }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Places", id: a.id }, "Places", "Me"],
+    }),
+    flagPlace: b.mutation<{ ok: boolean }, { id: string; reason?: string }>({
+      query: ({ id, reason }) => ({ url: `api/places/${id}/flag`, method: "POST", body: { reason } }),
+      invalidatesTags: (_r, _e, a) => [{ type: "Places", id: a.id }],
+    }),
+    // "Where do I actually park for this?" — ranked at the event's start time.
+    getEventParking: b.query<{ event: any; options: any[]; note?: string; radiusKm?: number }, string>({
+      query: (id) => `api/events/${id}/parking`,
+      providesTags: ["Places"],
+    }),
+    // end:C
+    // track:D maps — offline pack manifest + walking routes
+    // The manifest reports the REAL byte size of each pack from an R2 HEAD, so
+    // "Download the Bay (412 MB)" is never a build-time guess. Walking routes are
+    // computed on-device in a Web Worker (see features/nav/router.worker.ts) —
+    // there is deliberately no routing endpoint, because the point is that it
+    // works with the network off.
+    getMapPacks: b.query<{ available: boolean; packs: { id: string; kind: "basemap" | "walk-graph" | "other"; bytes: number; etag: string; builtAt: string | null; url: string }[] }, void>({
+      query: () => "api/maps/packs",
+      providesTags: ["MapPacks"],
+    }),
+    // end:D
+    // track:E funding — companies, rounds, outcomes, attribution, leaderboards
+    getCompanies: b.query<{ companies: any[]; total: number }, string | void>({ query: (qs) => `api/companies${qs || ""}`, providesTags: ["Companies"] }),
+    getCompany: b.query<{ company: any; rounds: any[]; people: any[] }, string>({ query: (slug) => `api/companies/${slug}`, providesTags: (_r, _e, slug) => [{ type: "Companies", id: slug }] }),
+    // Identity resolution: candidates are QUESTIONS. Confirming is the only thing
+    // that ever welds a filing name to this account, so it invalidates both the
+    // offer list and the company page that renders the result.
+    getCompanyMatches: b.query<{ matches: any[] }, void>({ query: () => "api/me/company-matches", providesTags: ["Companies"] }),
+    confirmCompanyPerson: b.mutation<{ result: string }, { companyId: string; personName: string; role: string }>({
+      query: ({ companyId, ...body }) => ({ url: `api/companies/${companyId}/people/confirm`, method: "POST", body }),
+      invalidatesTags: ["Companies", "Outcomes"],
+    }),
+    releaseCompanyPerson: b.mutation<{ released: boolean }, { companyId: string; personName: string; role: string }>({
+      query: ({ companyId, ...body }) => ({ url: `api/companies/${companyId}/people/release`, method: "POST", body }),
+      invalidatesTags: ["Companies"],
+    }),
+    getMyCompanies: b.query<{ companies: any[] }, void>({ query: () => "api/me/companies", providesTags: ["Companies"] }),
+    declareCompany: b.mutation<{ ok: boolean; companyId: string }, { name: string; role: string; title?: string }>({
+      query: (body) => ({ url: "api/me/companies", method: "POST", body }),
+      invalidatesTags: ["Companies"],
+    }),
+    importMyCompanies: b.mutation<{ adopted: number }, void>({ query: () => ({ url: "api/me/companies/import", method: "POST" }), invalidatesTags: ["Companies"] }),
+
+    getMyOutcomes: b.query<{ outcomes: any[] }, void>({ query: () => "api/me/outcomes", providesTags: ["Outcomes"] }),
+    getPublicOutcomes: b.query<{ outcomes: any[] }, string>({ query: (handle) => `api/u/${handle}/outcomes`, providesTags: ["Outcomes"] }),
+    createOutcome: b.mutation<{ ok: boolean; id: string }, { kind: string; companyId?: string; roundId?: string; occurredAt?: string; visibility?: string }>({
+      query: (body) => ({ url: "api/outcomes", method: "POST", body }),
+      invalidatesTags: ["Outcomes", "Attribution"],
+    }),
+    claimAttribution: b.mutation<{ result: string }, { outcomeId: string; causeType: string; causeId: string; evidence?: string }>({
+      query: ({ outcomeId, ...body }) => ({ url: `api/outcomes/${outcomeId}/attributions`, method: "POST", body }),
+      invalidatesTags: ["Outcomes", "Attribution"],
+    }),
+    confirmAttribution: b.mutation<{ result: string }, string>({
+      query: (id) => ({ url: `api/attributions/${id}/confirm`, method: "POST" }),
+      invalidatesTags: ["Outcomes", "Attribution"],
+    }),
+    getImpactBoard: b.query<{ board: string; rows: any[] }, string | void>({ query: (board) => `api/impact/leaderboard${board ? `?board=${board}` : ""}`, providesTags: ["Attribution"] }),
+    // Public by default; this is the exit. It changes every board, so it clears
+    // the ranking caches too.
+    setAttributionOptOut: b.mutation<{ ok: boolean; optOut: boolean }, boolean>({
+      query: (optOut) => ({ url: "api/me/attribution", method: "PUT", body: { optOut } }),
+      invalidatesTags: ["Outcomes", "Attribution", "Rankings", "Me"],
+    }),
+    // end:E
   }),
 });
 
@@ -133,4 +306,21 @@ export const {
   useGetEventMediaQuery, useGetAgendaQuery, useAttachMediaMutation,
   useGetImportedQuery, useConnectIntegrationMutation, useImportIntegrationMutation,
   useGetResearchQuery, useGetAgentQuery, useSetAgentMutation, useGetAgentSuggestionsQuery,
+  useSearchEventsQuery, useGetSearchTagsQuery, // hooks:A
+  // hooks:B
+  useGetVibeQuery, useReportVibeMutation, useGetVibePromptsQuery, useSearchVibesQuery,
+  // hooks:C
+  useGetPlaceKindsQuery, useProposePlaceKindMutation, useVotePlaceKindMutation,
+  useGetPlacesQuery, useGetPlacesNearQuery, useGetPlaceQuery,
+  useAddPlaceMutation, useReportPlaceMutation, useFlagPlaceMutation,
+  useGetEventParkingQuery,
+  // hooks:D
+  useGetMapPacksQuery,
+  // hooks:E
+  useGetCompaniesQuery, useGetCompanyQuery, useGetCompanyMatchesQuery,
+  useConfirmCompanyPersonMutation, useReleaseCompanyPersonMutation,
+  useGetMyCompaniesQuery, useDeclareCompanyMutation, useImportMyCompaniesMutation,
+  useGetMyOutcomesQuery, useGetPublicOutcomesQuery, useCreateOutcomeMutation,
+  useClaimAttributionMutation, useConfirmAttributionMutation,
+  useGetImpactBoardQuery, useSetAttributionOptOutMutation,
 } = api;

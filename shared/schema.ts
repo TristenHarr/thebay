@@ -159,6 +159,13 @@ export const POINTS = {
   // made in person is the prize; a reaction received is a nudge. All dedup-keyed so
   // delete-and-repost can't farm them.
   shadow: 4, connection: 15, reaction: 2,
+  // Vibes. Reading a room you actually attended is worth less than reviewing it but
+  // more than a shadow — and it only pays when the check-in verifies you were there.
+  vibe_report: 8,
+  // The crowd city map. Pinning a resource is real work that helps strangers, so
+  // it pays like a review; keeping a pin true is a tap, so it pays like a comment.
+  // Both dedup-keyed on the pin — delete-and-repin can't farm them.
+  place: 10, place_confirm: 3,
 } as const;
 export type PointKind = keyof typeof POINTS;
 

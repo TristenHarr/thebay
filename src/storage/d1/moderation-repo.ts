@@ -6,7 +6,9 @@ import { displayDomain } from "../../news/canonical";
 type Row = Record<string, any>;
 const nowIso = () => new Date().toISOString();
 
-export type FlagTarget = "story" | "comment";
+/** 'place' arrived with the crowd city map (0017 widened `flags`, 0020 the audit
+ *  log). One queue moderates the whole platform rather than two that drift. */
+export type FlagTarget = "story" | "comment" | "place";
 export type FlagReason = "spam" | "off_topic" | "abuse" | "duplicate" | "broken" | "other";
 
 export interface QueueItem {
@@ -148,6 +150,25 @@ export class ModerationRepo {
       .bind(limit)
       .all<Row>();
 
+    // Crowd-map pins. `places.hidden` is this table's `dead`, and a pin has no
+    // story, so story_id/story_slug are null — the queue renderer keys its link
+    // off targetType, not off their presence.
+    const places = await this.db
+      .prepare(
+        `SELECT 'place' AS target_type, p.id AS target_id,
+                p.name AS title, NULL AS url, NULL AS slug,
+                p.hidden AS dead, p.created_at,
+                u.display_name AS author, u.handle,
+                NULL AS story_id, NULL AS story_slug,
+                (SELECT COUNT(*) FROM flags f WHERE f.target_type='place' AND f.target_id=p.id) AS flag_count,
+                (SELECT GROUP_CONCAT(DISTINCT f.reason) FROM flags f WHERE f.target_type='place' AND f.target_id=p.id) AS reasons
+           FROM places p LEFT JOIN users u ON u.id = p.created_by
+          WHERE EXISTS (SELECT 1 FROM flags f WHERE f.target_type='place' AND f.target_id=p.id)
+          ORDER BY flag_count DESC, p.created_at DESC LIMIT ?`,
+      )
+      .bind(limit)
+      .all<Row>();
+
     const map = (x: Row): QueueItem => ({
       targetType: x.target_type,
       targetId: x.target_id,
@@ -164,7 +185,7 @@ export class ModerationRepo {
       storySlug: x.story_slug ?? null,
     });
 
-    return [...(stories.results ?? []).map(map), ...(comments.results ?? []).map(map)]
+    return [...(stories.results ?? []).map(map), ...(comments.results ?? []).map(map), ...(places.results ?? []).map(map)]
       .sort((a, b) => b.flagCount - a.flagCount || (a.createdAt < b.createdAt ? 1 : -1))
       .slice(0, limit);
   }
@@ -189,6 +210,19 @@ export class ModerationRepo {
   async reviveComment(commentId: string, actorId: string, note?: string): Promise<void> {
     await this.db.prepare("UPDATE comments SET dead = 0 WHERE id = ?").bind(commentId).run();
     await this.log("comment", commentId, "revive", actorId, note);
+  }
+
+  /** Hide a crowd-map pin. `places.hidden` is already excluded from every read
+   *  path (`idx_places_kind(kind_id, hidden)`), so this removes it from the map
+   *  without deleting the reporter's evidence or the pin's history. */
+  async hidePlace(placeId: string, actorId: string, note?: string): Promise<void> {
+    await this.db.prepare("UPDATE places SET hidden = 1 WHERE id = ?").bind(placeId).run();
+    await this.log("place", placeId, "hide", actorId, note);
+  }
+
+  async unhidePlace(placeId: string, actorId: string, note?: string): Promise<void> {
+    await this.db.prepare("UPDATE places SET hidden = 0 WHERE id = ?").bind(placeId).run();
+    await this.log("place", placeId, "unhide", actorId, note);
   }
 
   /** Blocks WRITING only. Reading stays open and existing contributions stay up
