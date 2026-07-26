@@ -10,8 +10,10 @@
  */
 import type { StoryOrigin } from "../../shared/schema";
 
-/** Origins that count as "ours". */
-export const LOCAL_ORIGINS: StoryOrigin[] = ["bay", "event"];
+/** Origins that count as "ours". Single source of truth is curate.ts, so the
+ *  filter and the front page can't disagree about what "the Bay" means. */
+import { LOCAL } from "./curate";
+export const LOCAL_ORIGINS = LOCAL;
 
 export interface Filterable {
   origin: StoryOrigin;

@@ -111,7 +111,10 @@ describe("NewsRepo", () => {
     expect(byNew.stories[0]!.title).toBe("Stale"); // top is raw votes
   });
 
-  it("defaults the feed to OUR content and opens up only when asked", async () => {
+  it("leads the front page with OUR content, and filters exactly when asked", async () => {
+    // `bay` is the CURATED front page, not a filter: ours leads, and a
+    // quality-barred slice of aggregated content fills the rest (see
+    // src/news/curate.ts). Explicit ?src= values are still strict filters.
     await repo.submit(ann.id, { kind: "link", title: "Local", url: "https://ex.com/local" } as any, at(1));
     await d1
       .prepare(
@@ -119,13 +122,33 @@ describe("NewsRepo", () => {
       )
       .bind(at(1))
       .run();
+    await d1
+      .prepare("INSERT INTO story_sources (story_id,origin,external_id,external_points,fetched_at) VALUES ('hn1','hn','e1',900,?)")
+      .bind(at(1))
+      .run();
 
-    const bay = await repo.feed({ src: "bay", sort: "new", limit: 10, offset: 0 }, null, NOW);
-    expect(bay.stories.map((s) => s.title)).toEqual(["Local"]);
+    const bay = await repo.feed({ src: "bay", sort: "hot", limit: 10, offset: 0 }, null, NOW);
+    expect(bay.stories[0]!.title).toBe("Local");                    // ours leads
+    expect(bay.stories.map((s) => s.title)).toContain("From HN");   // strong aggregated fills in
+
     const all = await repo.feed({ src: "all", sort: "new", limit: 10, offset: 0 }, null, NOW);
     expect(all.stories.map((s) => s.title).sort()).toEqual(["From HN", "Local"]);
     const hn = await repo.feed({ src: "hn", sort: "new", limit: 10, offset: 0 }, null, NOW);
     expect(hn.stories.map((s) => s.title)).toEqual(["From HN"]);
+  });
+
+  it("keeps weak aggregated content off the front page but in ?src=all", async () => {
+    await d1
+      .prepare("INSERT INTO stories (id,kind,title,url,url_hash,origin,created_at) VALUES ('w','link','Barely upvoted','https://ex.com/w','wh','hn',?)")
+      .bind(at(1)).run();
+    await d1
+      .prepare("INSERT INTO story_sources (story_id,origin,external_id,external_points,fetched_at) VALUES ('w','hn','ew',2,?)")
+      .bind(at(1)).run();
+
+    const bay = await repo.feed({ src: "bay", sort: "hot", limit: 10, offset: 0 }, null, NOW);
+    expect(bay.stories.map((s) => s.title)).not.toContain("Barely upvoted");
+    const all = await repo.feed({ src: "all", sort: "new", limit: 10, offset: 0 }, null, NOW);
+    expect(all.stories.map((s) => s.title)).toContain("Barely upvoted");
   });
 
   it("never shows moderated stories in any view", async () => {

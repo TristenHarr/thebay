@@ -3,7 +3,7 @@ import { ulid } from "ulid";
 import type { StoryOrigin, NewsSort, NewsFeedSource, StorySubmit } from "../../../shared/schema";
 import { canonicalizeUrl, urlHash, displayDomain } from "../../news/canonical";
 import { rankStories, type Rankable } from "../../news/rank";
-import { LOCAL_ORIGINS } from "../../news/filter";
+import { curateFrontPage, SUBMISSION } from "../../news/curate";
 import type { IngestedStory } from "../../news/ingest/types";
 import { deriveTopics, looksLikeCommercialTraining } from "../../news/summarize";
 import { isTemplateDuplicate } from "../../news/dedup";
@@ -12,9 +12,17 @@ import { isTemplateDuplicate } from "../../news/dedup";
 type Row = Record<string, any>;
 const nowIso = () => new Date().toISOString();
 
-/** How many candidates the hot ranker considers. Ranking is per-viewer and can't
- *  be an ORDER BY, so we bound the set instead of scoring the whole table. */
-const HOT_CANDIDATES = 500;
+/**
+ * How many candidates the hot ranker considers. Ranking is per-viewer and can't
+ * be an ORDER BY, so we bound the set instead of scoring the whole table.
+ *
+ * Sized to cover the entire hot window, because the cap is applied by RECENCY:
+ * at 500 it silently excluded every GitHub story (a source that posts a handful
+ * of older-but-still-relevant repos), so that source vanished from the front
+ * page even though it had a quota. A source being quiet must not mean a source
+ * being invisible. Ranking a couple of thousand rows in JS is microseconds.
+ */
+const HOT_CANDIDATES = 2000;
 /** Hot only considers the last week — older stories belong to /top, not the front page. */
 const HOT_WINDOW_DAYS = 7;
 
@@ -44,6 +52,9 @@ export interface Story {
   /** Set when the feed is read by a signed-in user. */
   didVote?: boolean;
   sources?: StorySourceRef[];
+  /** Best score this story has on the source it came from. Derived from
+   *  `sources` by attachSources so ranking and curation don't each re-walk it. */
+  externalPoints?: number;
 }
 
 export interface StorySourceRef {
@@ -128,10 +139,15 @@ export class NewsRepo {
 
   // ── reads ───────────────────────────────────────────────────────────────────
 
-  /** Origins matching a feed source, or null for "everything". */
+  /**
+   * Origins matching a feed source, or null for "everything".
+   *
+   * `bay` is NOT a filter — it's the curated front page, which draws from every
+   * source and is assembled by curateFrontPage(). Returning null here lets the
+   * ranker see all candidates; curation then decides the mix.
+   */
   private originsFor(src: NewsFeedSource): StoryOrigin[] | null {
-    if (src === "all") return null;
-    if (src === "bay") return LOCAL_ORIGINS;
+    if (src === "all" || src === "bay") return null;
     return [src];
   }
 
@@ -194,12 +210,21 @@ export class NewsRepo {
         topics: s.topics,
         commentCount: s.commentCount,
         networkVotes: network.get(s.id) ?? 0,
-        externalPoints: Math.max(0, ...(s.sources ?? []).map((x) => x.externalPoints ?? 0)),
+        externalPoints: s.externalPoints ?? 0,
         _s: s,
       }));
-      stories = rankStories(rankable, "hot", nowMs, { bayView: opts.src === "bay" })
-        .slice(opts.offset, opts.offset + opts.limit)
-        .map((r) => r._s);
+      const ranked = rankStories(rankable, "hot", nowMs, { bayView: opts.src === "bay" }).map((r) => r._s);
+
+      if (opts.src === "bay") {
+        // The curated front page: human submissions lead, then a quality-barred,
+        // per-source-quota'd mix of everything else. See src/news/curate.ts —
+        // the whole editorial policy lives there, not in this query.
+        const submissions = ranked.filter((s) => s.origin === SUBMISSION);
+        const rest = ranked.filter((s) => s.origin !== SUBMISSION);
+        stories = curateFrontPage(submissions, rest, opts.offset + opts.limit).slice(opts.offset);
+      } else {
+        stories = ranked.slice(opts.offset, opts.offset + opts.limit);
+      }
     }
 
     if (viewerId) await this.markVoted(stories, viewerId);
@@ -243,7 +268,10 @@ export class NewsRepo {
         by.set(x.story_id, list);
       }
     }
-    for (const s of stories) s.sources = by.get(s.id) ?? [];
+    for (const s of stories) {
+      s.sources = by.get(s.id) ?? [];
+      s.externalPoints = Math.max(0, ...s.sources.map((x) => x.externalPoints ?? 0));
+    }
   }
 
   private async countStories(where: string[], binds: any[]): Promise<number> {
