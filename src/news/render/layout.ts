@@ -52,11 +52,14 @@ function masthead(c: Chrome): RawHtml {
   <div class="wrap masthead-inner">
     <a class="brand mono" href="/"><span class="tilde">≈</span> the.bay<span style="color:var(--muted)">.news</span></a>
     <nav>
-      <a class="navlink mono" href="/" ${c.active === "top" ? raw('aria-current="page"') : ""}>top</a>
-      <a class="navlink mono" href="/newest" ${c.active === "new" ? raw('aria-current="page"') : ""}>new</a>
+      <!-- top/new duplicate the hot/new sort chips, so they're the first things
+           dropped when the header can't fit (see .navlink-optional). -->
+      <a class="navlink navlink-optional mono" href="/" ${c.active === "top" ? raw('aria-current="page"') : ""}>top</a>
+      <a class="navlink navlink-optional mono" href="/newest" ${c.active === "new" ? raw('aria-current="page"') : ""}>new</a>
       <a class="navlink mono" href="/submit" ${c.active === "submit" ? raw('aria-current="page"') : ""}>submit</a>
       <!-- Same rule in reverse: start the handoff HERE, land signed in over there. -->
-      <a class="switch mono" href="/auth/handoff/start?next=%2Fapp" title="The Bay — events">📡 events</a>
+      <a class="switch mono" href="/auth/handoff/start?next=%2Fapp" title="The Bay — events"
+         aria-label="Go to thebay.events">📡<span class="switch-label"> events</span></a>
       <button class="iconbtn" type="button" data-theme-toggle aria-label="Toggle light or dark theme">☾</button>
       ${c.user
         ? html`<a class="navlink mono" href="/u/${c.user.handle}">${c.user.displayName}</a>`

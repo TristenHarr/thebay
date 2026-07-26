@@ -390,7 +390,32 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.6; }
   .item-title { font-size: 22px; }
   .thumb { width: 56px; height: 44px; margin-left: 10px; }
   .preview img { width: 110px; }
-  .masthead nav { gap: 10px; }
+
+  /* The header must FIT. At 390px the full nav overflowed and clipped "sign in"
+     off the right edge. Drop the two links that duplicate the sort chips, and
+     reduce the switcher to its icon. */
+  .masthead nav { gap: 10px; min-width: 0; }
+  .navlink-optional { display: none; }
+  .switch-label { display: none; }
+  .switch { padding: 3px 7px; }
+  .brand { font-size: 12px; }
+
+  /* Eleven chips wrapped to three rows and pushed the first story below the
+     fold. One scrollable row keeps every filter reachable and gives the content
+     the space instead. */
+  .filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 10px;
+    /* Bleed to the viewport edge so the row reads as scrollable. */
+    margin: 0 -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .chip { flex: none; }
 }
 
 /* ── motion & print ─────────────────────────────────────────────────────────── */
