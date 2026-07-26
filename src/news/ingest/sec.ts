@@ -40,11 +40,21 @@ export function isBayLocation(location: string): boolean {
   return BAY_CITIES.some((c) => s.startsWith(c + ",") || s.startsWith(c + " "));
 }
 
-/** Recent Form D filings. Date-bounded so the query stays small and current. */
-export function searchUrl(nowMs: number = Date.now(), days = 7): string {
+/**
+ * The filing types worth surfacing, each a different moment in a company's life:
+ *   D  — a private placement. The company raised. The early-stage signal.
+ *   C  — Reg CF crowdfunding. Smaller, earlier, often pre-institutional.
+ *   S-1 — the IPO registration. The other end of the same story.
+ */
+export const FORMS = ["D", "C", "S-1"] as const;
+
+/** Recent filings of one type. Date-bounded so each query stays small. */
+export function searchUrl(nowMs: number = Date.now(), days = 7, form: string = "D"): string {
   const end = new Date(nowMs).toISOString().slice(0, 10);
-  const start = new Date(nowMs - days * 86_400_000).toISOString().slice(0, 10);
-  const p = new URLSearchParams({ q: '"California"', forms: "D", dateRange: "custom", startdt: start, enddt: end });
+  // S-1s are rare enough that a week's window usually returns nothing; widen it.
+  const window = form === "S-1" ? Math.max(days, 45) : days;
+  const start = new Date(nowMs - window * 86_400_000).toISOString().slice(0, 10);
+  const p = new URLSearchParams({ q: '"California"', forms: form, dateRange: "custom", startdt: start, enddt: end });
   return `${FTS}?${p.toString()}`;
 }
 
@@ -83,7 +93,7 @@ export function parseSec(payload: any): IngestedStory[] {
     const candidate: Partial<IngestedStory> = {
       origin: "sec",
       externalId: adsh,
-      title: `${name} filed a Form ${form}${where ? ` — ${where}` : ""}`.slice(0, 200),
+      title: `${name} filed ${form === "S-1" ? "to go public (S-1)" : `a Form ${form}`}${where ? ` — ${where}` : ""}`.slice(0, 200),
       url: filingUrl(cik, adsh),
       externalUrl: null,
       points: null,
@@ -98,9 +108,18 @@ export function parseSec(payload: any): IngestedStory[] {
 }
 
 export async function fetchSec(fetchImpl: typeof fetch = fetch, nowMs: number = Date.now()): Promise<IngestedStory[]> {
-  const res = await fetchImpl(searchUrl(nowMs), {
-    headers: { accept: "application/json", "user-agent": SEC_USER_AGENT },
-  });
-  if (!res.ok) throw new Error(`sec ${res.status}`);
-  return parseSec(await res.json());
+  const out: IngestedStory[] = [];
+  let failed = 0;
+  // Sequential, spaced: EDGAR caps at 10 req/s and asks that you not hammer it.
+  for (const form of FORMS) {
+    try {
+      const res = await fetchImpl(searchUrl(nowMs, 7, form), {
+        headers: { accept: "application/json", "user-agent": SEC_USER_AGENT },
+      });
+      if (!res.ok) throw new Error(`sec ${res.status}`);
+      out.push(...parseSec(await res.json()));
+    } catch { failed++; }
+  }
+  if (failed === FORMS.length) throw new Error(`all ${failed} EDGAR form queries failed`);
+  return out;
 }

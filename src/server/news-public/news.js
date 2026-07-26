@@ -15,30 +15,53 @@
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
 
   // ── theme ──────────────────────────────────────────────────────────────────
-  // The pre-paint bootstrap in <head> applies the stored theme; this toggles it.
-  function currentTheme() {
+  // Three states, cycled: auto → light → dark. "auto" removes data-theme so the
+  // CSS prefers-color-scheme rules apply and KEEP applying — if the OS switches
+  // to dark at sunset, so does the page. A two-state toggle can't express that:
+  // once you tap it you're pinned forever with no way back.
+  var THEMES = ["auto", "light", "dark"];
+  var ICON = { auto: "◐", light: "☀", dark: "☾" };
+
+  function storedTheme() {
+    try { var t = localStorage.getItem("bay-theme"); return THEMES.indexOf(t) >= 0 ? t : "auto"; }
+    catch (_) { return "auto"; }
+  }
+  function applyTheme(t) {
+    if (t === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", t);
+    try { localStorage.setItem("bay-theme", t); } catch (_) {}
+    paintTheme();
+  }
+  /** What's actually on screen right now, whichever way we got there. */
+  function effectiveTheme() {
     return document.documentElement.getAttribute("data-theme") ||
       (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
   }
-  function paintToggle() {
-    var b = $("[data-theme-toggle]");
-    if (b) b.textContent = currentTheme() === "dark" ? "☾" : "☀";
+  function paintTheme() {
+    var t = storedTheme();
+    var icon = $("[data-theme-icon]"), name = $("[data-theme-name]"), btn = $("[data-theme-toggle]");
+    if (icon) icon.textContent = ICON[t];
+    if (name) name.textContent = " " + t;
+    if (btn) {
+      btn.setAttribute(
+        "aria-label",
+        t === "auto" ? "Theme: follow system. Click for light." :
+        t === "light" ? "Theme: light. Click for dark." : "Theme: dark. Click to follow system.",
+      );
+    }
   }
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest("[data-theme-toggle]");
     if (!btn) return;
-    var next = currentTheme() === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("bay-theme", next); } catch (_) {}
-    paintToggle();
+    applyTheme(THEMES[(THEMES.indexOf(storedTheme()) + 1) % THEMES.length]);
   });
-  paintToggle();
+  paintTheme();
 
   // Carry the theme across to thebay.events — localStorage can't span domains.
   $$("a.switch").forEach(function (a) {
     try {
       var u = new URL(a.href);
-      u.searchParams.set("theme", currentTheme());
+      u.searchParams.set("theme", effectiveTheme());
       a.href = u.toString();
     } catch (_) {}
   });

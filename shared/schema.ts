@@ -161,7 +161,7 @@ export type PointKind = keyof typeof POINTS;
 // ── thebay.news ───────────────────────────────────────────────────────────────
 
 /** Where a story came from. `bay` = submitted by a human here. */
-export const StoryOriginSchema = z.enum(["bay", "hn", "lobsters", "rss", "event", "github", "sec"]);
+export const StoryOriginSchema = z.enum(["bay", "hn", "lobsters", "rss", "event", "github", "sec", "reddit"]);
 export type StoryOrigin = z.infer<typeof StoryOriginSchema>;
 
 export const StoryKindSchema = z.enum(["link", "text", "ask", "show"]);
@@ -190,7 +190,7 @@ export type CommentCreate = z.infer<typeof CommentCreateSchema>;
 
 /** Feed query. `src` defaults to `bay` — OUR content is the front page; the
  *  aggregator view is a deliberate choice the reader makes, not the default. */
-export const NewsFeedSourceSchema = z.enum(["bay", "all", "hn", "lobsters", "rss", "event", "github", "sec"]);
+export const NewsFeedSourceSchema = z.enum(["bay", "all", "hn", "lobsters", "rss", "event", "github", "sec", "reddit"]);
 export type NewsFeedSource = z.infer<typeof NewsFeedSourceSchema>;
 export const NewsSortSchema = z.enum(["hot", "new", "top", "discussed"]);
 export type NewsSort = z.infer<typeof NewsSortSchema>;

@@ -20,6 +20,10 @@ export const HN_FRONT_PAGE = "https://hn.algolia.com/api/v1/search?tags=front_pa
 export const HN_TAG_FEEDS: { id: string; url: string }[] = [
   { id: "show_hn", url: "https://hn.algolia.com/api/v1/search?tags=show_hn&numericFilters=points%3E20&hitsPerPage=20" },
   { id: "ask_hn", url: "https://hn.algolia.com/api/v1/search?tags=ask_hn&numericFilters=points%3E30&hitsPerPage=15" },
+  // "Launch HN" is how YC companies announce themselves. It is the single most
+  // startup-native thing on HN and there is no tag for it — it's a title
+  // convention — so it has to be a query.
+  { id: "launch_hn", url: "https://hn.algolia.com/api/v1/search?query=%22Launch%20HN%22&tags=story&hitsPerPage=15" },
 ];
 export const HN_ITEM = (id: string) => `https://news.ycombinator.com/item?id=${id}`;
 

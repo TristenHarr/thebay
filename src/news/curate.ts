@@ -52,6 +52,7 @@ export const QUOTA: Record<StoryOrigin, number> = {
   rss: 0.28,       // the publications we chose
   lobsters: 0.12,
   github: 0.12,
+  reddit: 0.18,   // large community, deliberately not dominant
 };
 
 /**
@@ -66,6 +67,7 @@ export const QUALITY_BAR: Record<string, number> = {
   hn: 80,
   lobsters: 15,
   github: 50,
+  reddit: 150,   // Reddit scores run high; 150 is a genuinely popular post
   rss: 0,
   event: 0,
   sec: 0,
@@ -127,7 +129,7 @@ export function curateFrontPage<T extends Curatable>(
   // set, sources later in the list were starved to zero. Cycling takes each
   // source's next-best in turn, so every source is represented and the page
   // reads as a mix rather than as blocks of one source at a time.
-  const cycle: StoryOrigin[] = (["event", "hn", "rss", "sec", "github", "lobsters"] as StoryOrigin[])
+  const cycle: StoryOrigin[] = (["event", "hn", "rss", "sec", "github", "lobsters", "reddit"] as StoryOrigin[])
     .filter((o) => buckets.has(o));
   // Any source not in the fixed order still gets a turn.
   for (const o of buckets.keys()) if (!cycle.includes(o)) cycle.push(o);

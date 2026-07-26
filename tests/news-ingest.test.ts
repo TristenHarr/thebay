@@ -9,7 +9,8 @@ import { parseFeed, decodeXml, fetchFeeds, MAX_ITEMS_PER_FEED, FEED_CONCURRENCY 
 import { deriveTopics, fallbackSummary, summarizeStory } from "../src/news/summarize";
 import { parsePreview, harvestPreview } from "../src/news/ingest/preview";
 import { parseGithub, searchUrl } from "../src/news/ingest/github";
-import { parseSec, isBayLocation, searchUrl as secSearchUrl } from "../src/news/ingest/sec";
+import { parseSec, isBayLocation, searchUrl as secSearchUrl, FORMS as SEC_FORMS } from "../src/news/ingest/sec";
+import { parseReddit, fetchReddit, credsFrom } from "../src/news/ingest/reddit";
 import { NewsRepo } from "../src/storage/d1/news-repo";
 import { SocialRepo } from "../src/storage/d1/social-repo";
 import { makeTestDb } from "./helpers/d1";
@@ -646,5 +647,90 @@ describe("malformed feed links can't sink a run", () => {
     expect(res.created).toBe(1);
     const { stories } = await repo.feed({ src: "all", sort: "new", limit: 10, offset: 0 });
     expect(stories.map((s) => s.url)).toEqual(["https://ex.com/good"]);
+  });
+});
+
+describe("Reddit (key-optional)", () => {
+  const payload = {
+    data: { children: [
+      { data: { id: "a1", title: "A popular post", url: "https://ex.com/a", permalink: "/r/startups/comments/a1/x/",
+                score: 400, num_comments: 60, created_utc: 1785000000, author: "someone", is_self: false } },
+      { data: { id: "a2", title: "A self post", permalink: "/r/startups/comments/a2/y/", url: "https://reddit.com/r/startups/comments/a2/y/",
+                score: 300, num_comments: 20, created_utc: 1785000000, author: "other", is_self: true } },
+      { data: { id: "a3", title: "Low score", url: "https://ex.com/c", permalink: "/r/x/c", score: 3, created_utc: 1785000000 } },
+      { data: { id: "a4", title: "Pinned mod post", url: "https://ex.com/d", permalink: "/r/x/d", score: 900, stickied: true, created_utc: 1785000000 } },
+      { data: { id: "a5", title: "NSFW", url: "https://ex.com/e", permalink: "/r/x/e", score: 900, over_18: true, created_utc: 1785000000 } },
+    ] },
+  };
+
+  it("keeps popular posts and drops noise, stickies and NSFW", () => {
+    const out = parseReddit(payload, "startups", ["vc"]);
+    expect(out.map((s) => s.title)).toEqual(["A popular post", "A self post"]);
+    expect(out[0]!.origin).toBe("reddit");
+    expect(out[0]!.topics).toEqual(["vc"]);
+    expect(out[0]!.points).toBe(400);
+  });
+
+  it("credits the thread separately for link posts", () => {
+    const out = parseReddit(payload, "startups");
+    expect(out[0]!.url).toBe("https://ex.com/a");                                    // the article
+    expect(out[0]!.externalUrl).toBe("https://www.reddit.com/r/startups/comments/a1/x/"); // the discussion
+  });
+
+  it("points a self post at its own thread", () => {
+    const out = parseReddit(payload, "startups");
+    expect(out[1]!.url).toContain("reddit.com");
+  });
+
+  it("namespaces ids by subreddit", () => {
+    expect(parseReddit(payload, "startups")[0]!.externalId).toBe("r/startups:a1");
+  });
+
+  it("is SKIPPED, not failed, when no credentials are configured", async () => {
+    // The whole point of key-optional: an unconfigured source must never make a
+    // cron run look broken.
+    const never = (async () => { throw new Error("should not be called"); }) as unknown as typeof fetch;
+    await expect(fetchReddit({}, never)).resolves.toEqual([]);
+    expect(credsFrom({})).toBeNull();
+    expect(credsFrom({ REDDIT_CLIENT_ID: "a" })).toBeNull();          // half-configured is not configured
+    expect(credsFrom({ REDDIT_CLIENT_ID: "a", REDDIT_CLIENT_SECRET: "b" })).toEqual({ clientId: "a", clientSecret: "b" });
+  });
+
+  it("authenticates and fetches when credentials ARE present", async () => {
+    const seen: string[] = [];
+    const fake = (async (url: any, init: any) => {
+      const u = String(url); seen.push(u);
+      if (u.includes("access_token")) {
+        expect(init.headers.authorization).toMatch(/^Basic /);
+        return new Response(JSON.stringify({ access_token: "tok" }), { status: 200 });
+      }
+      expect(init.headers.authorization).toBe("Bearer tok");
+      return new Response(JSON.stringify(payload), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const out = await fetchReddit({ REDDIT_CLIENT_ID: "a", REDDIT_CLIENT_SECRET: "b" }, fake);
+    expect(out.length).toBeGreaterThan(0);
+    expect(seen[0]).toContain("access_token");
+    expect(seen.some((u) => u.includes("oauth.reddit.com"))).toBe(true);
+  });
+});
+
+describe("SEC covers the whole funding lifecycle", () => {
+  it("queries Form D, Form C and S-1", () => {
+    expect(SEC_FORMS).toEqual(["D", "C", "S-1"]);
+    expect(secSearchUrl(Date.parse("2026-07-25T00:00:00Z"), 7, "C")).toContain("forms=C");
+  });
+
+  it("widens the window for S-1s, which are rare", () => {
+    const d = secSearchUrl(Date.parse("2026-07-25T00:00:00Z"), 7, "D");
+    const s1 = secSearchUrl(Date.parse("2026-07-25T00:00:00Z"), 7, "S-1");
+    expect(d).toContain("startdt=2026-07-18");
+    expect(s1).toContain("startdt=2026-06-10");
+  });
+
+  it("phrases an S-1 as going public, not as 'a Form S-1'", () => {
+    const hit = { _source: { ciks: ["1"], display_names: ["Acme Inc  (CIK 0000001)"], form: "S-1",
+      file_date: "2026-07-21", biz_locations: ["San Francisco, CA"], adsh: "0000001-26-000001" } };
+    expect(parseSec({ hits: { hits: [hit] } })[0]!.title).toContain("filed to go public (S-1)");
   });
 });

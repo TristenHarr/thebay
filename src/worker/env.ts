@@ -32,6 +32,9 @@ export interface Env {
   /** Comma-separated handles allowed to moderate thebay.news. Config, not a
    *  DB column, so privilege can't be escalated by an application bug. */
   ADMIN_HANDLES?: string;
+  /** Reddit OAuth (free "script" app). Absent = the Reddit source is skipped. */
+  REDDIT_CLIENT_ID?: string;
+  REDDIT_CLIENT_SECRET?: string;
   NEWS_ORIGIN?: string; // e.g. https://thebay.news (canonical for rel=canonical/OG/sitemap)
   EVENTS_ORIGIN?: string; // where the news site links back to for events
   // Cloudflare Access (Zero Trust) login

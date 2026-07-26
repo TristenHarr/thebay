@@ -55,6 +55,11 @@ const counts = (db: Database.Database) => ({
 const apply9 = (db: Database.Database) =>
   db.exec(readFileSync(resolve(MIGRATIONS, files().find((f) => f.startsWith("0009"))!), "utf8"));
 
+/** Migrations that rebuild `stories` — the dangerous shape. Detected, not listed,
+ *  so a future one is covered the moment it lands. */
+const rebuildMigrations = () =>
+  files().filter((f) => /DROP TABLE stories/i.test(readFileSync(resolve(MIGRATIONS, f), "utf8")));
+
 describe("0009 — widening the origin CHECK", () => {
   it("preserves EVERY row, including comments and votes", () => {
     // The naive rebuild loses these to ON DELETE CASCADE when `stories` is dropped.
@@ -126,5 +131,27 @@ describe("0009 — widening the origin CHECK", () => {
       db.prepare("INSERT INTO stories (id,kind,title,url,url_hash,slug,origin,created_at) VALUES ('dupe','link','x','https://ex.com/1','h1','d','bay','2026-07-25')").run(),
     ).toThrow(/UNIQUE/);
     db.close();
+  });
+});
+
+describe("EVERY table-rebuild migration preserves data", () => {
+  // 0009 and 0010 both drop and recreate `stories`, which cascades into
+  // comments, votes and sources. This finds them by content rather than by
+  // name, so the next one is covered automatically.
+  for (const file of rebuildMigrations()) {
+    it(`${file} keeps every row`, () => {
+      const db = dbUpTo(file.slice(0, 4));
+      seed(db);
+      const before = counts(db);
+      db.exec(readFileSync(resolve(MIGRATIONS, file), "utf8"));
+      expect(counts(db), `${file} lost rows`).toEqual(before);
+      expect((db.prepare("SELECT parent_id FROM comments WHERE id='c2'").get() as any).parent_id).toBe("c1");
+      expect((db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name LIKE '_mig%'").get() as any).n).toBe(0);
+      db.close();
+    });
+  }
+
+  it("finds more than one — the detection actually works", () => {
+    expect(rebuildMigrations().length).toBeGreaterThanOrEqual(2);
   });
 });

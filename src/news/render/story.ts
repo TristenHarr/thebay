@@ -22,6 +22,7 @@ const MARK_LABEL: Record<StoryOrigin, string> = {
   rss: "rss",
   github: "gh",
   sec: "sec",
+  reddit: "r/",
 };
 
 /** Ours is turquoise, aggregated is neutral — local content leads the eye. */
@@ -112,6 +113,8 @@ const SOURCES: { key: NewsFeedSource; label: string }[] = [
   { key: "lobsters", label: "lobsters" },
   { key: "rss", label: "feeds" },
   { key: "github", label: "code" },
+  { key: "sec", label: "filings" },
+  { key: "reddit", label: "reddit" },
   { key: "event", label: "events" },
 ];
 

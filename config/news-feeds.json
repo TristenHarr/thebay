@@ -686,5 +686,173 @@
       "software"
     ],
     "enabled": true
+  },
+  {
+    "id": "devto",
+    "url": "https://dev.to/feed",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "echojs",
+    "url": "https://www.echojs.com/rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "JavaScript-focused link aggregator."
+  },
+  {
+    "id": "haskell-discourse",
+    "url": "https://discourse.haskell.org/latest.rss",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "julia-discourse",
+    "url": "https://discourse.julialang.org/latest.rss",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "kotlin-discuss",
+    "url": "https://discuss.kotlinlang.org/latest.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "kubernetes-blog",
+    "url": "https://kubernetes.io/feed.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "lemmy-programming",
+    "url": "https://programming.dev/feeds/local.xml?sort=Hot",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Fediverse programming community."
+  },
+  {
+    "id": "lemmy-technology",
+    "url": "https://lemmy.world/feeds/c/technology.xml?sort=Hot",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "nixos-discourse",
+    "url": "https://discourse.nixos.org/latest.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "postgres-planet",
+    "url": "https://planet.postgresql.org/rss20.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "producthunt",
+    "url": "https://www.producthunt.com/feed",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true,
+    "note": "New product launches."
+  },
+  {
+    "id": "python-discuss",
+    "url": "https://discuss.python.org/latest.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Python's official Discourse."
+  },
+  {
+    "id": "pytorch-forums",
+    "url": "https://discuss.pytorch.org/latest.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "r-bayarea",
+    "url": "https://www.reddit.com/r/bayarea/.rss",
+    "topics": [],
+    "enabled": true,
+    "note": "Reddit's Bay Area community (RSS; Reddit rate-limits hard).",
+    "max": 8
+  },
+  {
+    "id": "rust-internals",
+    "url": "https://internals.rust-lang.org/latest.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "rust-users",
+    "url": "https://users.rust-lang.org/latest.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Rust community forum."
+  },
+  {
+    "id": "stackoverflow-blog",
+    "url": "https://stackoverflow.blog/feed/",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "swift-forums",
+    "url": "https://forums.swift.org/latest.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Swift's official forums."
+  },
+  {
+    "id": "tildes",
+    "url": "https://tildes.net/topics.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Small, high-signal HN-style community."
+  },
+  {
+    "id": "ziggit",
+    "url": "https://ziggit.dev/latest.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Zig community forum."
   }
 ]

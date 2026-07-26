@@ -12,6 +12,7 @@ import type { CanonicalEvent } from "../core/models/event";
 import type { EventFilter } from "../storage/repository";
 import { D1Repo } from "../storage/d1/d1-repo";
 import { GraphRepo } from "../storage/d1/graph-repo";
+import { ShadowsRepo } from "../storage/d1/shadows-repo";
 import { IngestPayloadSchema, GeocodePayloadSchema, ScrapeReportSchema } from "../../shared/schema";
 import type { Env, Vars } from "./env";
 import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-types";
@@ -202,5 +203,23 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(new GraphRepo(env.DB).runIntroAutopilot());
+    ctx.waitUntil(sweepExpiredShadows(env)); // GC shadows past their 24h + their media
   },
 };
+
+/** Cron backstop: hard-delete shadows past their 24h and delete their R2 media.
+ *  (Per-cell Durable Object alarms handle the *live* fade; this reaps the storage.) */
+async function sweepExpiredShadows(env: Env): Promise<void> {
+  try {
+    const { mediaKeys } = await new ShadowsRepo(env.DB).deleteExpired();
+    for (const key of mediaKeys) {
+      try {
+        await env.PHOTOS.delete(key);
+      } catch {
+        /* best-effort — the D1 row is already gone, so it no longer surfaces */
+      }
+    }
+  } catch {
+    /* the shadows table may not exist yet (pre-migration) — safe no-op */
+  }
+}

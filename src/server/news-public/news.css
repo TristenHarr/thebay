@@ -155,6 +155,15 @@ a:hover { color: var(--accent); }
 }
 .iconbtn:hover { color: var(--accent); border-color: var(--line); }
 
+/* The theme control names its own state — an unlabelled icon leaves you guessing
+   whether you're pinned or following the system. */
+.theme-btn {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 11px; letter-spacing: 0.02em;
+}
+.theme-label { color: var(--faint); }
+.theme-btn:hover .theme-label { color: var(--accent); }
+
 /* ── filter bar ─────────────────────────────────────────────────────────────── */
 .filters {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -397,6 +406,7 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.6; }
   .masthead nav { gap: 10px; min-width: 0; }
   .navlink-optional { display: none; }
   .switch-label { display: none; }
+  .theme-label { display: none; }
   .switch { padding: 3px 7px; }
   .brand { font-size: 12px; }
 

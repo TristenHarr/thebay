@@ -25,9 +25,11 @@ export interface Chrome {
  */
 const THEME_BOOTSTRAP = `(function(){try{
 var q=new URLSearchParams(location.search).get('theme');
-if(q==='dark'||q==='light'){localStorage.setItem('bay-theme',q)}
+if(q==='dark'||q==='light'||q==='auto'){localStorage.setItem('bay-theme',q)}
 var t=localStorage.getItem('bay-theme');
-if(t){document.documentElement.setAttribute('data-theme',t)}
+// 'auto' (or nothing stored) leaves data-theme unset so the CSS
+// prefers-color-scheme rules decide — and keep deciding if the OS flips.
+if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t)}
 }catch(e){}})()`;
 
 export function page(meta: PageMeta, chrome: Chrome, body: RawHtml): string {
@@ -60,7 +62,11 @@ function masthead(c: Chrome): RawHtml {
       <!-- Same rule in reverse: start the handoff HERE, land signed in over there. -->
       <a class="switch mono" href="/auth/handoff/start?next=%2Fapp" title="The Bay — events"
          aria-label="Go to thebay.events">📡<span class="switch-label"> events</span></a>
-      <button class="iconbtn" type="button" data-theme-toggle aria-label="Toggle light or dark theme">☾</button>
+      <!-- Three-state, not a toggle. A binary switch traps you: once you pick,
+           you can never get back to following the OS. Cycles auto → light → dark. -->
+      <button class="iconbtn theme-btn" type="button" data-theme-toggle
+              aria-label="Theme: follow system. Click to change."
+              title="Theme"><span data-theme-icon>◐</span><span class="theme-label" data-theme-name> auto</span></button>
       ${c.user
         ? html`<a class="navlink mono" href="/u/${c.user.handle}">${c.user.displayName}</a>`
         : html`<a class="navlink mono" href="/login">sign in</a>`}

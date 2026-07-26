@@ -17,6 +17,7 @@ import { fetchHn, fetchHnTags } from "./hn";
 import { fetchLobsters } from "./lobsters";
 import { fetchGithub } from "./github";
 import { fetchSec } from "./sec";
+import { fetchReddit } from "./reddit";
 import { fetchFeeds, type FeedConfig } from "./rss";
 import type { IngestedStory } from "./types";
 import feedsJson from "../../../config/news-feeds.json";
@@ -53,6 +54,7 @@ export async function runNewsIngest(env: Env, fetchImpl: typeof fetch = fetch): 
     ["lobsters", () => fetchLobsters(fetchImpl)],
     ["github", () => fetchGithub(fetchImpl)],
     ["sec", () => fetchSec(fetchImpl)],
+    ["reddit", () => fetchReddit(env, fetchImpl)],
     ["rss", async () => {
       const { stories, failed } = await fetchFeeds(feedsJson as FeedConfig[], fetchImpl);
       for (const f of failed) failures.push(`feed:${f}`);
