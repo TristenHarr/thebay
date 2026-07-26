@@ -82,7 +82,17 @@ export function parseFeed(xml: string, feedId = "rss"): IngestedStory[] {
   return out;
 }
 
-export interface FeedConfig { id: string; url: string; topics?: string[]; enabled?: boolean }
+export interface FeedConfig { id: string; url: string; topics?: string[]; enabled?: boolean; max?: number }
+
+/**
+ * How many items to take from any one feed per run.
+ *
+ * Feeds do not agree on what "recent" means. OpenAI's returns its ENTIRE
+ * history — a single feed contributed 1,050 stories on the first run, 63% of
+ * everything on the site, drowning 32 other sources. Feeds are ordered
+ * newest-first by convention, so taking the head is both cheap and correct.
+ */
+export const MAX_ITEMS_PER_FEED = 20;
 
 /**
  * Fetch many feeds. Per-feed failures are isolated and counted; we only throw if
@@ -100,7 +110,7 @@ export async function fetchFeeds(
     try {
       const res = await fetchImpl(f.url, { headers: { accept: "application/rss+xml, application/xml, text/xml", "user-agent": USER_AGENT } });
       if (!res.ok) throw new Error(String(res.status));
-      const items = parseFeed(await res.text(), f.id);
+      const items = parseFeed(await res.text(), f.id).slice(0, f.max ?? MAX_ITEMS_PER_FEED);
       for (const it of items) stories.push(f.topics?.length ? { ...it, topics: f.topics } : it);
     } catch {
       failed.push(f.id);

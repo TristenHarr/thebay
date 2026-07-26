@@ -118,6 +118,35 @@
     if (b) { e.preventDefault(); askForLocation(); }
   });
 
+  // ── flagging ───────────────────────────────────────────────────────────────
+  // Reports to a human. It never hides anything, so the UI says exactly that —
+  // an affordance that implied removal would invite pile-ons.
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-flag]");
+    if (!b) return;
+    e.preventDefault();
+    var parts = (b.getAttribute("data-flag") || "").split(":");
+    var reason = window.prompt("Report this to a moderator?\n\nReason: spam, off_topic, abuse, duplicate, broken, other", "spam");
+    if (!reason) return;
+
+    fetch("/api/news/flag", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ targetType: parts[0], targetId: parts[1], reason: reason.trim().toLowerCase() }),
+    })
+      .then(function (r) {
+        if (r.status === 401) { location.href = "/login"; return null; }
+        return r.json();
+      })
+      .then(function (body) {
+        if (!body) return;
+        if (body.ok) { b.textContent = "flagged"; b.disabled = true; b.style.color = "var(--muted)"; }
+        else if (body.message) alert(body.message);
+      })
+      .catch(function () {});
+  });
+
   // ── comment collapse ───────────────────────────────────────────────────────
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest("[data-collapse]");

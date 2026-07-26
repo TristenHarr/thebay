@@ -25,8 +25,10 @@ import { canonicalOrigin, newsOrigin, apexRedirectUrl } from "./origin";
 import { authRoutes } from "./routes/auth";
 import { optionalAuth, requireAuth } from "../auth/middleware";
 import { NewsRepo, type Story } from "../storage/d1/news-repo";
+import { ModerationRepo } from "../storage/d1/moderation-repo";
+import { requireAdmin, isAdmin } from "../auth/admin";
 import { attestLocation, hasAttestation } from "../news/attest";
-import { LIMITS, rateVerdict } from "../news/ratelimit";
+import { LIMITS, rateVerdict, waitMessage, type Limit } from "../news/ratelimit";
 import { NewsFilterSchema, StorySubmitSchema, CommentCreateSchema, GeoAttestSchema } from "../../shared/schema";
 import { html, raw, toHtml } from "../news/render/escape";
 import { page } from "../news/render/layout";
@@ -108,26 +110,58 @@ app.onError((err, c) => {
 app.route("/", authRoutes());
 
 // ── rate limiting ────────────────────────────────────────────────────────────
-/** Best-effort KV counter. Not atomic — good enough to stop flooding, which is
- *  all a rate limit needs to do; the real invariants are in the schema. */
-async function underLimit(env: Env, userId: string, kind: keyof typeof LIMITS): Promise<boolean> {
-  const limit = LIMITS[kind];
-  const bucket = Math.floor(Date.now() / (limit.windowSeconds * 1000));
-  const key = `rl:${kind}:${userId}:${bucket}`;
-  const n = parseInt((await env.SESSIONS.get(key)) || "0", 10) || 0;
-  const verdict = rateVerdict({ inWindow: n, limit });
-  if (verdict.ok) await env.SESSIONS.put(key, String(n + 1), { expirationTtl: limit.windowSeconds * 2 });
-  return verdict.ok;
+/**
+ * Per-hour cap AND cooldown. Best-effort KV — good enough to stop flooding,
+ * which is all this needs to do; the real invariants live in the schema.
+ *
+ * This is the ONLY automatic enforcement on the site. It is content-neutral by
+ * construction: it knows how often you acted, never what you said.
+ */
+async function checkRate(env: Env, userId: string, kind: keyof typeof LIMITS): Promise<{ ok: boolean; retryAfter: number }> {
+  // Widened to Limit: `vote` has no cooldown, so the literal union lacks the key.
+  const limit: Limit = LIMITS[kind];
+  const nowMs = Date.now();
+  const bucket = Math.floor(nowMs / (limit.windowSeconds * 1000));
+  const countKey = `rl:${kind}:${userId}:${bucket}`;
+  const lastKey = `rl:last:${kind}:${userId}`;
+
+  const [countRaw, lastRaw] = await Promise.all([env.SESSIONS.get(countKey), env.SESSIONS.get(lastKey)]);
+  const n = parseInt(countRaw || "0", 10) || 0;
+  const lastMs = parseInt(lastRaw || "0", 10) || 0;
+  const sinceLastSeconds = lastMs ? (nowMs - lastMs) / 1000 : Infinity;
+
+  const verdict = rateVerdict({ inWindow: n, limit, sinceLastSeconds });
+  if (verdict.ok) {
+    await Promise.all([
+      env.SESSIONS.put(countKey, String(n + 1), { expirationTtl: limit.windowSeconds * 2 }),
+      env.SESSIONS.put(lastKey, String(nowMs), { expirationTtl: Math.max(60, (limit.cooldownSeconds ?? 60) * 4) }),
+    ]);
+  }
+  return { ok: verdict.ok, retryAfter: verdict.retryAfterSeconds };
 }
 
-/** Every write requires a signed-in user who has proved they're in the Bay. */
+/**
+ * Every write requires: a signed-in user, not banned, physically in the Bay, and
+ * within the rate limits. Note what is NOT here — no content inspection at all.
+ */
 async function gateWrite(c: any, kind: keyof typeof LIMITS): Promise<Response | null> {
   const user = c.get("user")!;
+
+  // A ban blocks writing only. Reading stays open and prior contributions stand.
+  if (await new ModerationRepo(c.env.DB).isBanned(user.id)) {
+    return c.json({ error: "banned", message: "Your account can't post right now." }, 403);
+  }
   if (!(await hasAttestation(c.env, user.id))) {
     return c.json({ error: "not_in_bay", message: "You must be in the Bay Area to post here." }, 403);
   }
-  if (!(await underLimit(c.env, user.id, kind))) {
-    return c.json({ error: "rate_limited", message: "Slow down a moment." }, 429);
+  const rate = await checkRate(c.env, user.id, kind);
+  if (!rate.ok) {
+    // Say exactly how long to wait — a vague refusal reads as a judgement.
+    c.header("retry-after", String(rate.retryAfter));
+    return c.json(
+      { error: "rate_limited", retryAfter: rate.retryAfter, message: `You can do that again in ${waitMessage(rate.retryAfter)}.` },
+      429,
+    );
   }
   return null;
 }
@@ -363,9 +397,13 @@ app.post("/submit", requireAuth, async (c) => {
     return submitForm(c, chrome, input, parsed.error.issues[0]?.message ?? "That submission isn't valid.");
   }
 
+  if (await new ModerationRepo(c.env.DB).isBanned(c.get("user")!.id)) {
+    return submitForm(c, chrome, input, "Your account can't post right now.");
+  }
   if (!chrome.inBay) return submitForm(c, chrome, input, "You must be in the Bay Area to post here.");
-  if (!(await underLimit(c.env, c.get("user")!.id, "submit"))) {
-    return submitForm(c, chrome, input, "You've submitted a lot recently — try again later.");
+  const rate = await checkRate(c.env, c.get("user")!.id, "submit");
+  if (!rate.ok) {
+    return submitForm(c, chrome, input, `You can submit again in ${waitMessage(rate.retryAfter)}.`);
   }
 
   const { id, duplicate } = await repo(c).submit(c.get("user")!.id, parsed.data as any);
@@ -422,6 +460,126 @@ app.get("/login", optionalAuth, async (c) => {
   </a>
 </p>`;
   return htmlResponse(page({ title: "Sign in", canonical: newsOrigin(c.env) + "/login", noindex: true }, chrome, body));
+});
+
+// ── flags ────────────────────────────────────────────────────────────────────
+// A flag is a SIGNAL, not an action. It never hides anything at any count; it
+// only sorts the queue a human reviews. Same gate as any other write, so it's
+// rate-limited and can't be used to brigade.
+app.post("/api/news/flag", requireAuth, async (c) => {
+  const b: any = await c.req.json().catch(() => ({}));
+  const targetType = b.targetType === "comment" ? "comment" : "story";
+  const targetId = String(b.targetId ?? "");
+  const reason = ["spam", "off_topic", "abuse", "duplicate", "broken", "other"].includes(b.reason) ? b.reason : "other";
+  if (!targetId) return c.json({ error: "bad_request" }, 400);
+
+  const gate = await gateWrite(c, "flag");
+  if (gate) return gate;
+
+  const res = await new ModerationRepo(c.env.DB).flag(targetType, targetId, c.get("user")!.id, reason);
+  // Deliberately does NOT report the total back — a visible flag count invites
+  // pile-ons and tells a spammer how close they are to attention.
+  return c.json({ ok: true, counted: res.counted });
+});
+
+// ── moderation queue (admin only) ────────────────────────────────────────────
+// 404s for everyone else, signed in or not: no reason to advertise that this
+// exists, and a 403 would tell an attacker they only need the right account.
+app.get("/moderation", optionalAuth, requireAdmin, async (c) => {
+  const mod = new ModerationRepo(c.env.DB);
+  const [queue, log, blocked] = await Promise.all([mod.queue(), mod.actionLog(40), mod.blockedDomains()]);
+  const chrome = await chromeFor(c);
+  const nowMs = Date.now();
+
+  const action = (label: string, act: string, type: string, id: string, danger = false) =>
+    html`<form method="post" action="/moderation/act" style="display:inline">
+      <input type="hidden" name="action" value="${act}">
+      <input type="hidden" name="targetType" value="${type}">
+      <input type="hidden" name="targetId" value="${id}">
+      <button class="toggle" type="submit" style="${danger ? "color:var(--crit)" : ""}">${label}</button>
+    </form>`;
+
+  const body = html`<h1 class="item-title serif" style="margin-top:22px">Moderation</h1>
+<div class="notice">
+  <strong>Flags never hide anything.</strong>
+  They only sort this queue — every decision below is yours, logged, and reversible.
+</div>
+
+<h2 class="comments-head mono">Flagged · ${queue.length}</h2>
+${queue.length
+      ? queue.map((q) => html`<div class="comment">
+          <div class="comment-meta mono">
+            <span class="mark">${q.targetType}</span>
+            <span class="dot">·</span><span>${q.flagCount} flag${q.flagCount === 1 ? "" : "s"}</span>
+            ${q.reasons.length ? html`<span class="dot">·</span><span>${q.reasons.join(", ")}</span>` : ""}
+            ${q.handle ? html`<span class="dot">·</span><a href="/u/${q.handle}">${q.author}</a>` : ""}
+            <span class="dot">·</span><time datetime="${q.createdAt}">${timeAgo(q.createdAt, nowMs)}</time>
+            ${q.dead ? html`<span class="dot">·</span><span style="color:var(--warn)">hidden</span>` : ""}
+          </div>
+          <div class="comment-body">
+            <a href="/item/${q.storyId}${q.storySlug ? "/" + q.storySlug : ""}">${q.title.slice(0, 200)}</a>
+          </div>
+          <div class="comment-meta mono" style="margin-top:6px">
+            ${q.targetType === "story"
+        ? (q.dead ? action("unhide", "unhide", "story", q.targetId) : action("hide", "hide", "story", q.targetId, true))
+        : (q.dead ? action("revive", "revive", "comment", q.targetId) : action("kill", "kill", "comment", q.targetId, true))}
+            ${q.handle ? html`<span class="dot">·</span>${action("ban author", "ban", "user", q.handle, true)}` : ""}
+          </div>
+        </div>`)
+      : html`<p style="color:var(--muted);padding:14px 0">Nothing flagged. Quiet is good.</p>`}
+
+<h2 class="comments-head mono" style="margin-top:32px">Blocked domains · ${blocked.length}</h2>
+<form method="post" action="/moderation/act" style="margin:12px 0">
+  <input type="hidden" name="action" value="block_domain">
+  <input type="hidden" name="targetType" value="story">
+  <input class="input" name="targetId" placeholder="example.com" style="max-width:280px;display:inline-block">
+  <button class="btn btn-quiet" type="submit">Block</button>
+</form>
+${blocked.length ? html`<p class="mono" style="font-size:12px;color:var(--muted)">${blocked.join(" · ")}</p>` : ""}
+
+<h2 class="comments-head mono" style="margin-top:32px">Audit log</h2>
+${log.length
+      ? log.map((a) => html`<div class="comment-meta mono" style="padding:4px 0">
+          <span>${a.action}</span><span class="dot">·</span><span>${a.targetType}</span>
+          <span class="dot">·</span><span style="color:var(--faint)">${a.targetId.slice(0, 26)}</span>
+          <span class="dot">·</span><span>${a.actor ?? "system"}</span>
+          <span class="dot">·</span><time datetime="${a.createdAt}">${timeAgo(a.createdAt, nowMs)}</time>
+        </div>`)
+      : html`<p style="color:var(--muted);padding:14px 0">No actions taken yet.</p>`}`;
+
+  return htmlResponse(
+    page({ title: "Moderation", canonical: newsOrigin(c.env) + "/moderation", noindex: true }, chrome, body),
+  );
+});
+
+// Form POSTs, so the queue works with JavaScript disabled.
+app.post("/moderation/act", optionalAuth, requireAdmin, async (c) => {
+  const form = await c.req.parseBody().catch(() => ({} as any));
+  const actorId = c.get("user")!.id;
+  const act = String((form as any).action ?? "");
+  const targetId = String((form as any).targetId ?? "").trim();
+  const mod = new ModerationRepo(c.env.DB);
+  if (!targetId) return c.redirect("/moderation", 303);
+
+  switch (act) {
+    case "hide": await mod.hideStory(targetId, actorId); break;
+    case "unhide": await mod.unhideStory(targetId, actorId); break;
+    case "kill": await mod.killComment(targetId, actorId); break;
+    case "revive": await mod.reviveComment(targetId, actorId); break;
+    case "block_domain": await mod.blockDomain(targetId, actorId); break;
+    case "ban": {
+      // The form carries a handle; resolve it rather than trusting an id.
+      const u = await repo(c).userByHandle(targetId);
+      if (u) await mod.ban(u.id, actorId);
+      break;
+    }
+    case "unban": {
+      const u = await repo(c).userByHandle(targetId);
+      if (u) await mod.unban(u.id, actorId);
+      break;
+    }
+  }
+  return c.redirect("/moderation", 303);
 });
 
 // ── profiles ─────────────────────────────────────────────────────────────────

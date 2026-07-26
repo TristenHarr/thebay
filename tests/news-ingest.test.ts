@@ -5,9 +5,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { parseHn } from "../src/news/ingest/hn";
 import { parseLobsters } from "../src/news/ingest/lobsters";
-import { parseFeed, decodeXml, fetchFeeds } from "../src/news/ingest/rss";
+import { parseFeed, decodeXml, fetchFeeds, MAX_ITEMS_PER_FEED } from "../src/news/ingest/rss";
 import { deriveTopics, fallbackSummary, summarizeStory } from "../src/news/summarize";
 import { parsePreview, harvestPreview } from "../src/news/ingest/preview";
+import { parseGithub, searchUrl } from "../src/news/ingest/github";
+import { parseSec, isBayLocation, searchUrl as secSearchUrl } from "../src/news/ingest/sec";
 import { NewsRepo } from "../src/storage/d1/news-repo";
 import { SocialRepo } from "../src/storage/d1/social-repo";
 import { makeTestDb } from "./helpers/d1";
@@ -413,5 +415,143 @@ describe("summarize", () => {
     const env: any = { AI: { run: async () => { throw new Error("upstream down"); } } };
     const out = await summarizeStory(env, { title: "A chip story", description: "d".repeat(60), body: null } as any);
     expect(out).not.toBeNull();
+  });
+});
+
+describe("parseGithub", () => {
+  const payload = {
+    items: [
+      { id: 1, full_name: "acme/fastdb", description: "An embedded database for the edge",
+        html_url: "https://github.com/acme/fastdb", stargazers_count: 420, open_issues_count: 7,
+        created_at: "2026-07-20T00:00:00Z", language: "Rust", topics: ["database"], owner: { login: "acme" } },
+      { id: 2, full_name: "hw/fpga-tools", description: null, html_url: "https://github.com/hw/fpga-tools",
+        stargazers_count: 90, created_at: "2026-07-22T00:00:00Z", language: "Verilog", topics: ["fpga"], owner: { login: "hw" } },
+      { id: 3, full_name: "", description: "no name", html_url: "https://github.com/x" },
+    ],
+  };
+
+  it("maps repos, carrying the description into the title", () => {
+    const out = parseGithub(payload);
+    expect(out).toHaveLength(2); // the nameless row is dropped
+    expect(out[0]!.title).toBe("acme/fastdb — An embedded database for the edge");
+    expect(out[0]!.url).toBe("https://github.com/acme/fastdb");
+    expect(out[0]!.points).toBe(420);
+    expect(out[0]!.author).toBe("acme");
+    expect(out[0]!.origin).toBe("github");
+  });
+
+  it("falls back to the repo name when there's no description", () => {
+    expect(parseGithub(payload)[1]!.title).toBe("hw/fpga-tools");
+  });
+
+  it("derives topics from language and repo topics", () => {
+    const out = parseGithub(payload);
+    expect(out[0]!.topics).toContain("software");   // Rust
+    expect(out[1]!.topics).toContain("hardware");   // Verilog + fpga
+  });
+
+  it("has no separate discussion thread — the repo is the destination", () => {
+    expect(parseGithub(payload)[0]!.externalUrl).toBeNull();
+  });
+
+  it("tolerates a junk payload", () => {
+    expect(parseGithub(null)).toEqual([]);
+    expect(parseGithub({ items: "nope" })).toEqual([]);
+  });
+
+  it("only asks for recently-created repos, so it isn't the same giants forever", () => {
+    const url = searchUrl(Date.parse("2026-07-25T00:00:00Z"));
+    expect(url).toContain("created%3A%3E2026-07-11"); // 14 days back
+    expect(url).toContain("sort=stars");
+  });
+});
+
+describe("parseSec", () => {
+  const hit = (over: any = {}) => ({
+    _id: "0001-26-000013:primary_doc.xml",
+    _source: {
+      ciks: ["0001234567"], display_names: ["Acme Robotics Inc  (CIK 0001234567)"],
+      form: "D", file_date: "2026-07-21", biz_locations: ["San Francisco, CA"],
+      adsh: "0001234567-26-000013", ...over,
+    },
+  });
+
+  it("keeps Bay Area filers and drops everyone else", () => {
+    const out = parseSec({ hits: { hits: [
+      hit(),
+      hit({ adsh: "x-2", biz_locations: ["El Segundo, CA"] }),   // California, not the Bay
+      hit({ adsh: "x-3", biz_locations: ["Austin, TX"] }),
+      hit({ adsh: "x-4", biz_locations: ["Shanghai, F4"] }),
+    ] } });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.title).toBe("Acme Robotics Inc filed a Form D — San Francisco, CA");
+    expect(out[0]!.origin).toBe("sec");
+    expect(out[0]!.topics).toEqual(["vc"]);
+  });
+
+  it("recognises the Bay by city, and requires California", () => {
+    for (const ok of ["San Francisco, CA", "Palo Alto, CA", "Menlo Park, CA", "Oakland, CA", "San Jose, CA"]) {
+      expect(isBayLocation(ok), ok).toBe(true);
+    }
+    for (const no of ["El Segundo, CA", "Austin, TX", "San Francisco, TX", "Shanghai, F4", ""]) {
+      expect(isBayLocation(no), no).toBe(false);
+    }
+  });
+
+  it("emits ONE story per filing, not one per document in it", () => {
+    const out = parseSec({ hits: { hits: [hit(), hit({ }), hit({ })] } });
+    expect(out).toHaveLength(1);
+  });
+
+  it("strips the CIK suffix from the company name", () => {
+    expect(parseSec({ hits: { hits: [hit()] } })[0]!.title).not.toContain("CIK");
+  });
+
+  it("links to the filing index page", () => {
+    expect(parseSec({ hits: { hits: [hit()] } })[0]!.url)
+      .toBe("https://www.sec.gov/Archives/edgar/data/1234567/000123456726000013/0001234567-26-000013-index.htm");
+  });
+
+  it("date-bounds the query so it stays small and current", () => {
+    const url = secSearchUrl(Date.parse("2026-07-25T00:00:00Z"), 7);
+    expect(url).toContain("forms=D");
+    expect(url).toContain("startdt=2026-07-18");
+    expect(url).toContain("enddt=2026-07-25");
+  });
+
+  it("tolerates a junk payload", () => {
+    expect(parseSec(null)).toEqual([]);
+    expect(parseSec({ hits: {} })).toEqual([]);
+  });
+});
+
+describe("per-feed volume cap", () => {
+  const many = (n: number) =>
+    `<rss><channel>${Array.from({ length: n }, (_, i) =>
+      `<item><title>Story number ${i}</title><link>https://ex.com/${i}</link><guid>g${i}</guid></item>`).join("")}</channel></rss>`;
+
+  it("caps a feed that returns its entire history", async () => {
+    // OpenAI's feed really does return 1050 items; unchecked it was 63% of the site.
+    const fake = (async () => new Response(many(1050), { status: 200 })) as unknown as typeof fetch;
+    const { stories } = await fetchFeeds([{ id: "huge", url: "https://x/1" }], fake);
+    expect(stories).toHaveLength(MAX_ITEMS_PER_FEED);
+  });
+
+  it("takes the NEWEST items, since feeds are ordered newest-first", async () => {
+    const fake = (async () => new Response(many(50), { status: 200 })) as unknown as typeof fetch;
+    const { stories } = await fetchFeeds([{ id: "f", url: "https://x/1" }], fake);
+    expect(stories[0]!.title).toBe("Story number 0");
+  });
+
+  it("lets a feed opt into a different cap", async () => {
+    const fake = (async () => new Response(many(50), { status: 200 })) as unknown as typeof fetch;
+    const { stories } = await fetchFeeds([{ id: "f", url: "https://x/1", max: 3 }], fake);
+    expect(stories).toHaveLength(3);
+  });
+
+  it("leaves small feeds untouched", async () => {
+    const fake = (async () => new Response(many(4), { status: 200 })) as unknown as typeof fetch;
+    const { stories } = await fetchFeeds([{ id: "f", url: "https://x/1" }], fake);
+    expect(stories).toHaveLength(4);
   });
 });

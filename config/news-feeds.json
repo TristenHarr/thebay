@@ -1,37 +1,266 @@
 [
   {
-    "id": "arxiv-math",
-    "url": "https://rss.arxiv.org/rss/math.CO",
-    "topics": ["math"],
+    "id": "quanta",
+    "url": "https://api.quantamagazine.org/feed/",
+    "topics": [
+      "math"
+    ],
     "enabled": true,
-    "note": "arXiv combinatorics — the math axis."
+    "note": "Quanta \u2014 the best mathematics writing on the internet."
   },
   {
-    "id": "arxiv-eess-sp",
-    "url": "https://rss.arxiv.org/rss/eess.SP",
-    "topics": ["hardware"],
-    "enabled": true,
-    "note": "Signal processing — hardware-adjacent research."
+    "id": "arxiv-math-co",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:math.CO&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
   },
   {
-    "id": "cloudflare-blog",
-    "url": "https://blog.cloudflare.com/rss/",
-    "topics": ["software"],
+    "id": "arxiv-math-nt",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:math.NT&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-math-ag",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:math.AG&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "math"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "lwn",
+    "url": "https://lwn.net/headlines/newrss",
+    "topics": [
+      "software"
+    ],
     "enabled": true,
-    "note": "Deep systems writing; also the platform this runs on."
+    "note": "LWN \u2014 deep Linux/systems reporting."
+  },
+  {
+    "id": "changelog",
+    "url": "https://changelog.com/feed",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "acm-queue",
+    "url": "https://queue.acm.org/rss/feeds/queuecontent.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "phoronix",
+    "url": "https://www.phoronix.com/rss.php",
+    "topics": [
+      "software",
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "the-register",
+    "url": "https://www.theregister.com/headlines.atom",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-cs-ai",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-cs-lg",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-cs-dc",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.DC&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-cs-cr",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.CR&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-cs-pl",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.PL&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "ieee-spectrum",
+    "url": "https://spectrum.ieee.org/feeds/feed.rss",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "semiengineering",
+    "url": "https://semiengineering.com/feed/",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
   },
   {
     "id": "hackaday",
     "url": "https://hackaday.com/feed/",
-    "topics": ["hardware"],
-    "enabled": true,
-    "note": "Hardware builds and teardowns."
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
   },
   {
-    "id": "sfstandard-tech",
+    "id": "eetimes",
+    "url": "https://www.eetimes.com/feed/",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-eess-sp",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:eess.SP&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "arxiv-mems",
+    "url": "https://export.arxiv.org/api/query?search_query=cat:cond-mat.mes-hall&sortBy=submittedDate&sortOrder=descending&max_results=15",
+    "topics": [
+      "hardware"
+    ],
+    "enabled": true,
+    "note": "Mesoscale + nanoscale physics \u2014 the MEMS/photonics axis."
+  },
+  {
+    "id": "ycombinator",
+    "url": "https://www.ycombinator.com/blog/rss",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "crunchbase-news",
+    "url": "https://news.crunchbase.com/feed/",
+    "topics": [
+      "vc"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "sfstandard",
     "url": "https://sfstandard.com/feed/",
     "topics": [],
     "enabled": true,
-    "note": "Local SF reporting — the Bay half of Bay Area tech."
+    "note": "Local SF reporting \u2014 the Bay half of Bay Area tech."
+  },
+  {
+    "id": "missionlocal",
+    "url": "https://missionlocal.org/feed/",
+    "topics": [],
+    "enabled": true
+  },
+  {
+    "id": "berkeley-news",
+    "url": "https://news.berkeley.edu/feed/",
+    "topics": [],
+    "enabled": true
+  },
+  {
+    "id": "cloudflare-blog",
+    "url": "https://blog.cloudflare.com/rss/",
+    "topics": [
+      "software"
+    ],
+    "enabled": true,
+    "note": "Deep systems writing; also the platform this runs on."
+  },
+  {
+    "id": "stripe-blog",
+    "url": "https://stripe.com/blog/feed.rss",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "netflix-tech",
+    "url": "https://netflixtechblog.com/feed",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "airbnb-tech",
+    "url": "https://medium.com/feed/airbnb-engineering",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "databricks",
+    "url": "https://www.databricks.com/feed",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "openai",
+    "url": "https://openai.com/news/rss.xml",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "google-research",
+    "url": "https://research.google/blog/rss/",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
+  },
+  {
+    "id": "meta-eng",
+    "url": "https://engineering.fb.com/feed/",
+    "topics": [
+      "software"
+    ],
+    "enabled": true
   }
 ]

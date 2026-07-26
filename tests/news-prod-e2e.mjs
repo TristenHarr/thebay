@@ -162,7 +162,21 @@ async function get(path, init = {}) {
     bad("signed-in checks ran", String(err));
   }
 
-  section("9 · www hosts resolve (a custom domain covers the exact host only)");
+  section("8b · Moderation is gated, and flags never hide");
+  check("moderation queue is invisible to anonymous (404, not 403)", (await get("/moderation")).status === 404);
+  const flagAnon = await get("/api/news/flag", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ targetType: "story", targetId: "x" }),
+  });
+  check("flagging requires auth", flagAnon.status === 401, `got ${flagAnon.status}`);
+  check("moderation actions are gated", (await get("/moderation/act", { method: "POST" })).status === 404);
+
+  section("9 · Every source filter renders");
+  for (const src of ["github", "sec", "hn", "lobsters", "rss", "event", "bay", "all"]) {
+    check(`?src=${src}`, (await get(`/?src=${src}`)).status === 200);
+  }
+
+  section("9b · www hosts resolve (a custom domain covers the exact host only)");
   for (const host of ["https://www.thebay.news", "https://www.thebay.events"]) {
     try {
       const r = await get(host + "/");

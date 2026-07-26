@@ -23,6 +23,18 @@ const HN_PAYLOAD = {
 const LOBSTERS_PAYLOAD = [
   { short_id: "l1", title: "A Lobsters story", url: "https://ex.com/lo1", score: 20, comment_count: 3, created_at: "2026-07-25T08:00:00Z", comments_url: "https://lobste.rs/s/l1", tags: ["rust"], submitter_user: { username: "alice" } },
 ];
+const HN_TAG_PAYLOAD = {
+  hits: [
+    { objectID: "s1", title: "Show HN: I built a MEMS rig", url: "https://ex.com/show1", points: 80, num_comments: 12, created_at: "2026-07-25T07:00:00Z", author: "maker" },
+  ],
+};
+const GITHUB_PAYLOAD = {
+  items: [
+    { id: 991, full_name: "acme/fastdb", description: "An embedded database", html_url: "https://github.com/acme/fastdb",
+      stargazers_count: 420, open_issues_count: 7, created_at: "2026-07-20T00:00:00Z", language: "Rust",
+      topics: ["database"], owner: { login: "acme" } },
+  ],
+};
 const FEED_XML = `<rss><channel><item><title>A feed story</title><link>https://ex.com/rss1</link><guid>g1</guid></item></channel></rss>`;
 const PREVIEW_HTML = `<html lang="en"><head>
   <meta property="og:image" content="https://ex.com/hero.png">
@@ -31,13 +43,24 @@ const PREVIEW_HTML = `<html lang="en"><head>
 </head></html>`;
 
 /** Route a fake fetch by URL, with per-host failure injection. */
-function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?: boolean; failPreviews?: boolean } = {}) {
+function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?: boolean; failPreviews?: boolean; failGithub?: boolean; failSec?: boolean } = {}) {
   return (async (input: any) => {
     const url = String(typeof input === "string" ? input : input.url ?? input);
     const json = (b: any) => new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
     if (url.includes("hn.algolia.com")) {
       if (opts.failHn) return new Response("nope", { status: 503 });
+      // Show HN / Ask HN come from the same endpoint with a tag filter.
+      if (url.includes("show_hn") || url.includes("ask_hn")) return json(HN_TAG_PAYLOAD);
       return json(HN_PAYLOAD);
+    }
+    if (url.includes("efts.sec.gov")) {
+      if (opts.failSec) return new Response("", { status: 403 });
+      return json({ hits: { hits: [{ _source: { ciks: ["1"], display_names: ["Acme Inc  (CIK 0000001)"], form: "D",
+        file_date: "2026-07-21", biz_locations: ["San Francisco, CA"], adsh: "0000001-26-000001" } }] } });
+    }
+    if (url.includes("api.github.com")) {
+      if (opts.failGithub) return new Response("rate limited", { status: 403 });
+      return json(GITHUB_PAYLOAD);
     }
     if (url.includes("lobste.rs")) {
       if (opts.failLobsters) throw new Error("connection reset");
@@ -100,7 +123,7 @@ describe("runNewsIngest", () => {
   });
 
   it("still completes when EVERY source is down", async () => {
-    const r = await runNewsIngest(env, fakeFetch({ failHn: true, failLobsters: true, failFeeds: true }));
+    const r = await runNewsIngest(env, fakeFetch({ failHn: true, failLobsters: true, failFeeds: true, failGithub: true, failSec: true }));
     expect(r.failures.length).toBeGreaterThan(0);
     expect(r.created).toBe(0);
     expect(r).toHaveProperty("summarized"); // returned a report rather than throwing
@@ -194,5 +217,26 @@ describe("body formatting", () => {
     expect(e.length).toBeLessThanOrEqual(50);
     expect(e.endsWith("…")).toBe(true);
     expect(e).not.toMatch(/\s…$/);
+  });
+});
+
+describe("the new sources are isolated like every other one", () => {
+  it("a GitHub outage does not stop the rest of the harvest", async () => {
+    const { env } = makeTestEnv();
+    const repo = new NewsRepo(env.DB);
+    const r = await runNewsIngest(env, fakeFetch({ failGithub: true }));
+    expect(r.failures.join(" ")).toMatch(/github/);
+    expect(r.created).toBeGreaterThan(0);
+    expect((await repo.feed({ src: "all", sort: "new", limit: 50, offset: 0 })).stories.some((s) => s.title === "A real HN story")).toBe(true);
+  });
+
+  it("stores GitHub repos and Show HN under their own origins", async () => {
+    const { env } = makeTestEnv();
+    const repo = new NewsRepo(env.DB);
+    await runNewsIngest(env, fakeFetch());
+    const gh = await repo.feed({ src: "github", sort: "new", limit: 10, offset: 0 });
+    expect(gh.stories.some((s) => s.title.startsWith("acme/fastdb"))).toBe(true);
+    const hn = await repo.feed({ src: "hn", sort: "new", limit: 20, offset: 0 });
+    expect(hn.stories.some((s) => s.title.startsWith("Show HN"))).toBe(true);
   });
 });

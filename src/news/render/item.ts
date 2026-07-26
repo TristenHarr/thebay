@@ -50,6 +50,9 @@ function commentNode(c: CommentNode, nowMs: number, signedIn: boolean, attendees
       <span class="dot">·</span>
       <time datetime="${c.createdAt}">${timeAgo(c.createdAt, nowMs)}</time>
       ${signedIn ? html`<span class="dot">·</span><button class="toggle" type="button" data-reply="${c.id}">reply</button>` : ""}
+      ${/* Quiet, same weight as reply. A flag is a report to a human, not a
+            removal — nothing about it should feel like a red button. */
+        signedIn ? html`<span class="dot">·</span><button class="toggle" type="button" data-flag="comment:${c.id}" title="Report to a moderator">flag</button>` : ""}
     </div>
     <div class="comment-body">${c.dead ? html`<em style="color:var(--faint)">[flagged]</em>` : formatBody(c.body)}</div>
     ${c.children.length
@@ -106,6 +109,7 @@ export function itemPage(s: Story, comments: Comment[], opts: ItemOpts): RawHtml
     ${s.author ? html`<span class="dot">·</span><a href="/u/${s.handle}">${s.author}</a>` : ""}
     <span class="dot">·</span>
     <time datetime="${s.createdAt}">${longDate(s.createdAt)}</time>
+    ${opts.signedIn ? html`<span class="dot">·</span><button class="toggle" type="button" data-flag="story:${s.id}" title="Report to a moderator">flag</button>` : ""}
   </div>
 
   ${previewCard(s)}

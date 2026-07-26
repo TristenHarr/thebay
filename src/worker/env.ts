@@ -29,6 +29,9 @@ export interface Env {
   DEV_LOGIN?: string; // "1" enables the passwordless dev login (local/testing only)
   PUBLIC_ORIGIN?: string; // e.g. https://thebay.events (canonical for long-lived URLs)
   // thebay.news — the sibling Worker shares this Env shape and these bindings.
+  /** Comma-separated handles allowed to moderate thebay.news. Config, not a
+   *  DB column, so privilege can't be escalated by an application bug. */
+  ADMIN_HANDLES?: string;
   NEWS_ORIGIN?: string; // e.g. https://thebay.news (canonical for rel=canonical/OG/sitemap)
   EVENTS_ORIGIN?: string; // where the news site links back to for events
   // Cloudflare Access (Zero Trust) login
