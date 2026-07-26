@@ -47,6 +47,7 @@ export const LOCAL: StoryOrigin[] = ["bay", "event", "sec", "fda", "research"];
  * events, and enough GitHub/Lobsters/EDGAR to be genuinely interesting.
  */
 export const QUOTA: Record<StoryOrigin, number> = {
+  crates: 2,
   bay: 1,          // unused (submissions are uncapped) but keeps the map total
   event: 0.22,     // Bay events — present, never the whole page
   sec: 0.15,       // fresh funding filings
@@ -68,6 +69,9 @@ export const QUOTA: Record<StoryOrigin, number> = {
  * quota is what keeps them honest.
  */
 export const QUALITY_BAR: Record<string, number> = {
+  // Already gated by downloads/description in the adapter; a second numeric
+  // bar here would just hide the source.
+  crates: 0,
   hn: 80,
   lobsters: 15,
   github: 50,

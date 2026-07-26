@@ -221,7 +221,14 @@ describe("thebay.news worker", () => {
     expect((await get("/")).status).toBe(200);
     expect((await get(`/item/${id}/fabricating-a-mems-resonator`)).status).toBe(200);
     expect((await post("/api/news/vote", { storyId: id })).status).toBe(401);
-    expect((await get("/submit")).status).toBe(401);
+
+    // The submit PAGE sends a signed-out visitor to sign in — a 401 is correct
+    // for an API and a dead end for a navigation. What must not happen is the
+    // form being served, or a submission being accepted.
+    const page = await get("/submit");
+    expect(page.status).toBe(302);
+    expect(page.headers.get("location")).toBe("/login");
+    expect((await post("/submit", { title: "x", url: "https://ex.com/x" })).status).toBe(401);
   });
 
   it("refuses writes from outside the Bay and allows them from inside", async () => {

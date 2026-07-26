@@ -307,3 +307,30 @@ describe("looksLikeCommercialTraining", () => {
     expect(looksLikeCommercialTraining("")).toBe(false);
   });
 });
+
+describe("summaries inherited from a source", () => {
+  it("does not render someone else's mid-word truncation", async () => {
+    const { fallbackSummary, tidyFragment } = await import("../src/news/summarize");
+    // Real text, from a real story on the real front page.
+    const cut =
+      "Artificial intelligence may do more to determine the global balance of power over the next decade " +
+      "than any other force, transforming how wars are fought and who dominates t";
+    expect(cut.length).toBeLessThan(180); // under OUR limit — that's why it slipped through
+    const out = fallbackSummary({ description: cut, body: null, title: "x" } as any)!;
+    expect(out).not.toMatch(/\bt$/);
+    expect(out).toMatch(/dominates…$/);
+    expect(tidyFragment(cut)).toBe(out);
+  });
+
+  it("leaves a short complete phrase alone", async () => {
+    const { tidyFragment } = await import("../src/news/summarize");
+    expect(tidyFragment("Bay Area Rust Meetup")).toBe("Bay Area Rust Meetup");
+    expect(tidyFragment("A complete sentence that ends properly.")).toBe("A complete sentence that ends properly.");
+  });
+
+  it("leaves a long sentence that simply lacks a full stop", async () => {
+    const { tidyFragment } = await import("../src/news/summarize");
+    const s = "A long descriptive line about a hardware meetup in Oakland that comfortably runs past the length threshold and still ends on a whole word";
+    expect(tidyFragment(s)).toBe(s + "…");
+  });
+});

@@ -380,7 +380,12 @@ ${!chrome.inBay
   );
 }
 
-app.get("/submit", requireAuth, async (c) => submitForm(c, await chromeFor(c, "submit")));
+// A PAGE, not an API: requireAuth answers 401, which a browser renders as a
+// dead end. Someone who clicks "submit" while signed out should land on sign-in.
+app.get("/submit", optionalAuth, async (c) => {
+  if (!c.get("user")) return c.redirect("/login", 302);
+  return submitForm(c, await chromeFor(c, "submit"));
+});
 
 app.post("/submit", requireAuth, async (c) => {
   const form = await c.req.parseBody().catch(() => ({} as any));

@@ -5,6 +5,7 @@
  */
 import { html, raw, safeUrl, type RawHtml } from "./escape";
 import { timeAgo } from "./time";
+import { tidyFragment } from "../summarize";
 import type { Story } from "../../storage/d1/news-repo";
 import type { StoryOrigin, NewsFeedSource, NewsSort } from "../../../shared/schema";
 
@@ -25,6 +26,7 @@ const MARK_LABEL: Record<StoryOrigin, string> = {
   reddit: "r/",
   research: "paper",
   fda: "fda",
+  crates: "crate",
 };
 
 /** Ours is turquoise, aggregated is neutral — local content leads the eye. */
@@ -87,7 +89,10 @@ export function storyRow(s: Story, opts: RowOpts): RawHtml {
       ${discussElsewhere(s)}
       ${s.eventId ? html`<span class="dot">·</span><a href="${discussion}#event">◆ event</a>` : ""}
     </div>
-    ${s.summary ? html`<p class="tldr">${s.summary}</p>` : ""}
+    ${/* Tidied at RENDER, not only at write: thousands of summaries were stored
+          before the ingest path learned to do this, and a reader shouldn't have
+          to wait for a backfill to stop seeing "…and who dominates t". */
+      s.summary ? html`<p class="tldr">${tidyFragment(s.summary)}</p>` : ""}
   </div>
 </li>`;
 }
@@ -119,6 +124,7 @@ const SOURCES: { key: NewsFeedSource; label: string }[] = [
   { key: "reddit", label: "reddit" },
   { key: "research", label: "research" },
   { key: "fda", label: "fda" },
+  { key: "crates", label: "crates" },
   { key: "event", label: "events" },
 ];
 

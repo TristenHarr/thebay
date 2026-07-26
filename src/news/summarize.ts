@@ -47,11 +47,31 @@ export function deriveTopics(text: string): string[] {
   return Object.entries(TOPIC_SIGNALS).filter(([, re]) => re.test(hay)).map(([k]) => k);
 }
 
+/**
+ * Sources hand us text that is ALREADY cut off. A meetup description arrived as
+ * 172 characters ending "…transforming how wars are fought and who dominates t",
+ * which is under our own limit, so it passed straight through and rendered that
+ * bare "t" on the front page. Our truncation was never the problem; inheriting
+ * someone else's was.
+ *
+ * A fragment that ends with a stub of a word is the tell. Only a genuinely long
+ * run of text is treated this way — "Bay Area Rust Meetup" is a short complete
+ * phrase with no terminal punctuation, and mangling that would be worse than
+ * the thing being fixed.
+ */
+const SENTENCE_END = /[.!?…)"'\]]$/;
+const CUT_OFF_WORD = /\s+\S{1,3}$/;
+export function tidyFragment(text: string): string {
+  if (SENTENCE_END.test(text) || text.length < 120) return text;
+  const trimmed = text.replace(CUT_OFF_WORD, "");
+  return (trimmed.length < text.length ? trimmed : text) + "…";
+}
+
 /** A usable summary with no model at all: the source's own description, trimmed. */
 export function fallbackSummary(story: Pick<Story, "description" | "body" | "title">): string | null {
   const raw = (story.description || story.body || "").replace(/\s+/g, " ").trim();
   if (raw.length < 40) return null; // too short to be worth a TL;DR line
-  return raw.length <= 180 ? raw : raw.slice(0, 179).replace(/\s+\S*$/, "") + "…";
+  return raw.length <= 180 ? tidyFragment(raw) : raw.slice(0, 179).replace(/\s+\S*$/, "") + "…";
 }
 
 const PROMPT = (title: string, context: string) =>

@@ -41,6 +41,9 @@ function seed(db: Database.Database) {
   db.prepare("INSERT INTO comments (id,story_id,author_id,body,depth,created_at) VALUES ('c1','s1','u1','top',0,'2026-07-01')").run();
   db.prepare("INSERT INTO comments (id,story_id,parent_id,author_id,body,depth,created_at) VALUES ('c2','s1','c1','u1','reply',1,'2026-07-01')").run();
   db.prepare("INSERT INTO comment_votes (comment_id,user_id,created_at) VALUES ('c1','u1','2026-07-01')").run();
+  if (hasColumn(db, "stories", "first_seen_at")) {
+    db.prepare("UPDATE stories SET first_seen_at = '2026-07-02T00:00:00.000Z'").run();
+  }
 }
 
 const counts = (db: Database.Database) => ({
@@ -51,6 +54,11 @@ const counts = (db: Database.Database) => ({
   commentVotes: (db.prepare("SELECT COUNT(*) n FROM comment_votes").get() as any).n,
   points: (db.prepare("SELECT SUM(vote_count) s FROM stories").get() as any).s,
 });
+
+/** Does a column exist? Migrations before 0013 legitimately have no first_seen_at. */
+function hasColumn(db: Database.Database, table: string, col: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as any[]).some((c) => c.name === col);
+}
 
 const apply9 = (db: Database.Database) =>
   db.exec(readFileSync(resolve(MIGRATIONS, files().find((f) => f.startsWith("0009"))!), "utf8"));
@@ -145,6 +153,13 @@ describe("EVERY table-rebuild migration preserves data", () => {
       const before = counts(db);
       db.exec(readFileSync(resolve(MIGRATIONS, file), "utf8"));
       expect(counts(db), `${file} lost rows`).toEqual(before);
+      // Columns added AFTER the earlier rebuilds must be carried across by later
+      // ones. A rebuild that forgets a column doesn't lose rows — it silently
+      // blanks a field for every row, which no row count would ever catch.
+      if (hasColumn(db, "stories", "first_seen_at")) {
+        const nulled = (db.prepare("SELECT COUNT(*) n FROM stories WHERE first_seen_at IS NULL").get() as any).n;
+        expect(nulled, `${file} dropped first_seen_at`).toBe(0);
+      }
       expect((db.prepare("SELECT parent_id FROM comments WHERE id='c2'").get() as any).parent_id).toBe("c1");
       expect((db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name LIKE '_mig%'").get() as any).n).toBe(0);
       db.close();

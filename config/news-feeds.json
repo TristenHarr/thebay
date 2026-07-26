@@ -9,30 +9,6 @@
     "note": "Quanta \u2014 the best mathematics writing on the internet."
   },
   {
-    "id": "arxiv-math-co",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:math.CO&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "math"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-math-nt",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:math.NT&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "math"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-math-ag",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:math.AG&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "math"
-    ],
-    "enabled": true
-  },
-  {
     "id": "lwn",
     "url": "https://lwn.net/headlines/newrss",
     "topics": [
@@ -75,46 +51,6 @@
     "enabled": true
   },
   {
-    "id": "arxiv-cs-ai",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "software"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-cs-lg",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "software"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-cs-dc",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.DC&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "software"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-cs-cr",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.CR&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "software"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-cs-pl",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:cs.PL&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "software"
-    ],
-    "enabled": true
-  },
-  {
     "id": "ieee-spectrum",
     "url": "https://spectrum.ieee.org/feeds/feed.rss",
     "topics": [
@@ -145,23 +81,6 @@
       "hardware"
     ],
     "enabled": true
-  },
-  {
-    "id": "arxiv-eess-sp",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:eess.SP&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "hardware"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-mems",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:cond-mat.mes-hall&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "hardware"
-    ],
-    "enabled": true,
-    "note": "Mesoscale + nanoscale physics \u2014 the MEMS/photonics axis."
   },
   {
     "id": "ycombinator",
@@ -301,30 +220,6 @@
     "url": "https://feeds.arstechnica.com/arstechnica/index",
     "topics": [
       "hardware"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-math-ds",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:math.DS&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "math"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-math-oc",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:math.OC&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "math"
-    ],
-    "enabled": true
-  },
-  {
-    "id": "arxiv-math-pr",
-    "url": "https://export.arxiv.org/api/query?search_query=cat:math.PR&sortBy=submittedDate&sortOrder=descending&max_results=15",
-    "topics": [
-      "math"
     ],
     "enabled": true
   },
@@ -854,5 +749,14 @@
     ],
     "enabled": true,
     "note": "Zig community forum."
+  },
+  {
+    "id": "logicaffeine-releases",
+    "title": "Logicaffeine / LOGOS releases",
+    "url": "https://github.com/Brahmastra-Labs/logicaffeine/releases.atom",
+    "topics": [
+      "software",
+      "math"
+    ]
   }
 ]

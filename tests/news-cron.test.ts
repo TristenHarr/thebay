@@ -68,7 +68,7 @@ const formDoc = (cik: string, name: string, amount: string) => `<?xml version="1
 /** Route a fake fetch by URL, with per-host failure injection.
  *  `failFormD` breaks the FIRST filer's primary_doc.xml only — the point being
  *  that it costs that one filing and nothing else. */
-function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?: boolean; failPreviews?: boolean; failGithub?: boolean; failSec?: boolean; failResearch?: boolean; failFda?: boolean; failFormD?: boolean } = {}) {
+function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?: boolean; failPreviews?: boolean; failGithub?: boolean; failSec?: boolean; failResearch?: boolean; failFda?: boolean; failFormD?: boolean; failArxiv?: boolean; failCrates?: boolean } = {}) {
   return (async (input: any) => {
     const url = String(typeof input === "string" ? input : input.url ?? input);
     const json = (b: any) => new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
@@ -77,6 +77,25 @@ function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?:
       // Show HN / Ask HN come from the same endpoint with a tag filter.
       if (url.includes("show_hn") || url.includes("ask_hn")) return json(HN_TAG_PAYLOAD);
       return json(HN_PAYLOAD);
+    }
+    if (url.includes("export.arxiv.org")) {
+      if (opts.failArxiv) return new Response("", { status: 503 });
+      return new Response(
+        `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry>
+           <id>http://arxiv.org/abs/2507.00001v1</id><published>2026-07-24T00:00:00Z</published>
+           <title>A paper</title><author><name>A Author</name></author>
+           <arxiv:primary_category term="cs.LG" /></entry></feed>`,
+        { status: 200, headers: { "content-type": "application/atom+xml" } },
+      );
+    }
+    if (url.includes("crates.io/api/v1/summary")) {
+      if (opts.failCrates) return new Response("", { status: 500 });
+      return json({ just_updated: [{ name: "a-crate", newest_version: "1.2.3",
+        description: "A crate that does a thing worth describing", downloads: 9999,
+        updated_at: "2026-07-26T00:00:00Z" }], new_crates: [] });
+    }
+    if (url.includes("crates.io/api/v1/crates")) {
+      return json({ crates: [] });
     }
     if (url.includes("api.openalex.org")) {
       if (opts.failResearch) return new Response("", { status: 429 });
@@ -173,7 +192,7 @@ describe("runNewsIngest", () => {
   });
 
   it("still completes when EVERY source is down", async () => {
-    const r = await runNewsIngest(env, fakeFetch({ failHn: true, failLobsters: true, failFeeds: true, failGithub: true, failSec: true, failResearch: true, failFda: true }));
+    const r = await runNewsIngest(env, fakeFetch({ failHn: true, failLobsters: true, failFeeds: true, failGithub: true, failSec: true, failResearch: true, failFda: true, failArxiv: true, failCrates: true }));
     expect(r.failures.length).toBeGreaterThan(0);
     expect(r.created).toBe(0);
     expect(r).toHaveProperty("summarized"); // returned a report rather than throwing

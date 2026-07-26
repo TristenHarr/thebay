@@ -111,7 +111,16 @@ async function get(path, init = {}) {
   const notFound = await get("/definitely/not/a/page");
   check("unknown path 404s", notFound.status === 404, `got ${notFound.status}`);
   check("404 is noindex", /name="robots" content="noindex/.test(notFound.body));
-  check("submit requires auth", (await get("/submit")).status === 401);
+  // A signed-out visitor gets sent to sign in, not a 401 — /submit is a page,
+  // not an API. What must still be impossible is POSTing one.
+  const submitAnon = await get("/submit");
+  check("submit sends a signed-out visitor to sign in",
+    submitAnon.status === 302 && submitAnon.headers.get("location") === "/login",
+    `got ${submitAnon.status} → ${submitAnon.headers.get("location")}`);
+  check("anonymous cannot POST a submission",
+    (await fetch(NEWS + "/submit", { method: "POST", redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "title=x&url=https%3A%2F%2Fexample.com%2Fx" })).status === 401);
   const vote = await get("/api/news/vote", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
   check("vote requires auth", vote.status === 401, `got ${vote.status}`);
   const admin = await get("/api/admin/ingest-news", { method: "POST" });

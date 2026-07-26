@@ -27,6 +27,8 @@ jobs:
     name: Deploy to Cloudflare
     needs: verify # only deploy if the whole suite is green
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the visual proof to the ci-visual branch + comment on the commit
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -99,3 +101,75 @@ jobs:
         env:
           NEWS_BASE: https://thebay.news
           BASE: https://thebay.events
+
+      # Everything above asks the HTML questions. None of it can see that a
+      # story is rendering the browser's broken-image glyph, that a phone
+      # scrolls sideways, or that a vote arrow is too small to hit with a thumb
+      # — all three were live and all three passed every existing check. This
+      # step looks at the deployed pages in a real browser at two widths in
+      # both themes, and leaves the screenshots behind either way.
+      - name: Install Playwright Chromium
+        if: always()
+        run: npx playwright install --with-deps chromium
+
+      - name: Visual proof — thebay.news
+        if: always()
+        id: newsvisual
+        run: node tests/news-visual.mjs
+        env:
+          BASE: https://thebay.news
+
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: news-visual-${{ github.sha }}
+          path: test-results/visual
+          retention-days: 30
+
+      # Same trick the Shadows job uses: park the PNGs on an orphan branch so
+      # they have raw URLs, then post them inline on the commit. A screenshot
+      # you have to download and unzip is a screenshot nobody looks at.
+      - name: Publish the screenshots to the ci-visual branch
+        if: always()
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          git config user.name "visual-bot"
+          git config user.email "actions@github.com"
+          if git ls-remote --exit-code --heads origin ci-visual >/dev/null 2>&1; then
+            git fetch origin ci-visual --depth=1
+            git worktree add -B ci-visual /tmp/newsvis origin/ci-visual
+          else
+            git worktree add --detach /tmp/newsvis HEAD
+            ( cd /tmp/newsvis && git checkout --orphan ci-visual && git rm -rf . --quiet >/dev/null 2>&1 || true )
+          fi
+          DEST="/tmp/newsvis/news-$SHA"
+          mkdir -p "$DEST"
+          cp test-results/visual/*.png "$DEST"/ 2>/dev/null || true
+          ( cd /tmp/newsvis && git add -A && git commit -m "news visual proof for $SHA" --quiet && git push origin ci-visual --quiet ) || echo "nothing new to publish"
+
+      - name: Post the visual proof on the commit
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.sha;
+            const repo = `${context.repo.owner}/${context.repo.repo}`;
+            const raw = (f) => `https://raw.githubusercontent.com/${repo}/ci-visual/news-${sha}/${f}`;
+            const passed = '${{ steps.newsvisual.outcome }}' === 'success';
+            const shot = (n) => `<img src="${raw(n + '.png')}" width="290" alt="${n}">`;
+            const body = [
+              '<!-- news-visual -->',
+              `## 📰 thebay.news — visual proof ${passed ? '✅ PASS' : '❌ FAIL'}`,
+              '',
+              'Front page, both themes, desktop + phone. Checked for broken images, sideways scroll,',
+              'clipped header controls, text contrast and thumb-sized tap targets.',
+              '',
+              [shot('front-desktop-light'), shot('front-desktop-dark')].join(' '),
+              '',
+              [shot('front-mobile-light'), shot('front-mobile-dark')].join(' '),
+              '',
+              `<sub>All 20 screenshots are in this run's <b>news-visual</b> artifact · <code>${sha.slice(0, 7)}</code></sub>`,
+            ].join('\n');
+            await github.rest.repos.createCommitComment({ ...context.repo, commit_sha: sha, body });

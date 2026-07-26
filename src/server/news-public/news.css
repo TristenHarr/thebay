@@ -438,3 +438,21 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.6; }
   .masthead, .filters, .vote, .foot, .pager { display: none; }
   body { background: #fff; color: #000; }
 }
+
+
+/* ── touch targets ───────────────────────────────────────────────────────────
+   The vote arrow renders at 18×13 and the theme button at 21×19. Fine for a
+   mouse, under the 24px WCAG 2.5.8 minimum for a thumb, and the visual suite
+   measures it on every run. Enlarged only on touch-sized viewports, so the
+   desktop list keeps its density. */
+@media (max-width: 600px) {
+  .vote {
+    min-width: 24px; min-height: 24px;
+    display: flex; justify-content: center;
+    margin-top: 0; padding-top: 3px;
+  }
+  /* Both axes. min-height alone left the theme button 21px wide — still under
+     the threshold, still hard to hit, and the suite kept saying so. */
+  .iconbtn, .theme-btn { min-width: 24px; min-height: 24px; display: inline-flex; align-items: center; justify-content: center; }
+  .chip { min-height: 24px; display: inline-flex; align-items: center; }
+}

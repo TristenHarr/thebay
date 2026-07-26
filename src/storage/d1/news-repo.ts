@@ -743,11 +743,21 @@ export class NewsRepo {
     return n;
   }
 
-  /** Link stories whose preview metadata has never been harvested. */
+  /**
+   * Link stories whose preview metadata has never been harvested.
+   *
+   * `crates` is excluded. crates.io renders client-side, so its OpenGraph tags
+   * are the SITE's, not the crate's: every crate story came back with the same
+   * "crates.io serves as a central registry…" blurb and the same logo card,
+   * repeated down the page. The crate's real description is already in its
+   * title. A preview that is identical for every row is decoration, not
+   * information.
+   */
   async needingPreview(limit = 15): Promise<Story[]> {
     const r = await this.db
       .prepare(
         `${SELECT_STORY} WHERE s.dead = 0 AND s.url IS NOT NULL AND s.preview_fetched_at IS NULL
+            AND s.origin <> 'crates'
           ORDER BY s.created_at DESC LIMIT ?`,
       )
       .bind(limit)

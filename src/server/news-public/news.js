@@ -14,6 +14,17 @@
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
 
+  /**
+   * A preview image whose URL has since died renders as the browser's broken-image
+   * glyph — a grey box with a torn icon, sitting in the middle of the front page.
+   * Nothing server-side can know that: the URL was reachable when we fetched the
+   * preview. Capture phase, because `error` on <img> does not bubble.
+   */
+  document.addEventListener("error", function (e) {
+    var t = e.target;
+    if (t && t.tagName === "IMG" && t.classList.contains("thumb")) t.remove();
+  }, true);
+
   // ── theme ──────────────────────────────────────────────────────────────────
   // Three states, cycled: auto → light → dark. "auto" removes data-theme so the
   // CSS prefers-color-scheme rules apply and KEEP applying — if the OS switches

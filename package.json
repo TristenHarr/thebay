@@ -42,7 +42,7 @@
     "build-web": "vite build -c web/vite.config.ts",
     "test:nav": "node tests/nav-matrix.mjs",
     "test:actions": "node tests/actions-e2e.mjs",
-    "test:visual": "node tests/shadows-visual.mjs",
+    "test:visual": "node tests/news-visual.mjs",
     "test:prod": "node tests/prod-e2e.mjs",
     "test:prod-news": "node tests/news-prod-e2e.mjs",
     "schedule:install": "bash scripts/schedule.sh install",
