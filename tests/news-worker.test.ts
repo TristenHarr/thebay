@@ -176,6 +176,28 @@ describe("thebay.news worker", () => {
     expect(res.status).toBe(303);
   });
 
+  it("accepts a comment at the URL the RENDERED FORM actually posts to", async () => {
+    // Regression: the form's action comes from itemPath() and includes the slug,
+    // but only /item/:id/comment was registered — so every comment POST 404'd in
+    // production. Posting to a hand-written route path hid it. Extract the action
+    // from the real HTML and post THERE.
+    const { id } = await seed();
+    const cookie = await login();
+    await post("/api/news/attest", SF, cookie);
+
+    const page = await (await get(`/item/${id}/fabricating-a-mems-resonator`, { headers: { cookie } })).text();
+    const action = /<form[^>]*action="([^"]+)"[^>]*data-comment-form/.exec(page)?.[1]
+      ?? /<form[^>]*data-comment-form[^>]*action="([^"]+)"/.exec(page)?.[1];
+    expect(action, "the comment form must render an action").toBeTruthy();
+    expect(action).toContain("/comment");
+
+    const res = await post(action!, { body: "posted at the form's own action" }, cookie, true);
+    expect(res.status).toBe(303);
+
+    const after = await (await get(`/item/${id}/fabricating-a-mems-resonator`)).text();
+    expect(after).toContain("posted at the form&#39;s own action");
+  });
+
   it("404s unknown paths instead of serving another page", async () => {
     const res = await get("/no/such/page");
     expect(res.status).toBe(404);

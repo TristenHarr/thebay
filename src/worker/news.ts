@@ -259,7 +259,11 @@ app.get("/item/:id", optionalAuth, renderItem);
 app.get("/item/:id/:slug", optionalAuth, renderItem);
 
 // Comment via a real form POST, so the thread works with JavaScript disabled.
-app.post("/item/:id/comment", requireAuth, async (c) => {
+//
+// Registered for BOTH shapes. The form's action is built from itemPath(), which
+// includes the slug — so `/item/:id/comment` alone leaves the rendered form
+// posting to a 404. Accepting both keeps old links working too.
+const commentHandler = async (c: any) => {
   const id = c.req.param("id");
   const form = await c.req.parseBody().catch(() => ({} as any));
   const parsed = CommentCreateSchema.safeParse({
@@ -280,7 +284,10 @@ app.post("/item/:id/comment", requireAuth, async (c) => {
   await fanOutComment(c, id, { id: res.id, author: user.displayName, handle: user.handle });
 
   return c.redirect(`/item/${id}#${res.id}`, 303);
-});
+};
+
+app.post("/item/:id/comment", requireAuth, commentHandler);
+app.post("/item/:id/:slug/comment", requireAuth, commentHandler);
 
 /** Push a new comment to readers currently on the page. Never throws. */
 async function fanOutComment(c: any, storyId: string, payload: unknown): Promise<void> {
