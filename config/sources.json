@@ -145,6 +145,27 @@
     "params": { "mode": "calendar", "url": "https://lu.ma/agi-house", "period": "future", "maxPages": 12 }
   },
   {
+    "id": "luma-frontiertower",
+    "type": "luma",
+    "enabled": true,
+    "note": "Frontier Tower — SF's AI/tech vertical village (16 floors of events). lu.ma/frontiertower (cal-Sl7q1nHTRXQzjP2). ~all events are on-site in SF.",
+    "params": { "mode": "calendar", "url": "https://lu.ma/frontiertower", "period": "future", "maxPages": 12 }
+  },
+  {
+    "id": "luma-shack15",
+    "type": "luma",
+    "enabled": true,
+    "note": "SHACK15 — the founder community at the SF Ferry Building. lu.ma/shack15 (cal-ABBzsytYbpSqbOp).",
+    "params": { "mode": "calendar", "url": "https://lu.ma/shack15", "period": "future", "maxPages": 8 }
+  },
+  {
+    "id": "luma-foundersinc",
+    "type": "luma",
+    "enabled": true,
+    "note": "Founders Inc (f.inc) — SF startup studio in the Marina. lu.ma/foundersinc (cal-28TMNht8rLmmZmt).",
+    "params": { "mode": "calendar", "url": "https://lu.ma/foundersinc", "period": "future", "maxPages": 8 }
+  },
+  {
     "id": "eb-terms",
     "type": "eventbrite",
     "enabled": true,
