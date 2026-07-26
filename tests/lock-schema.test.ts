@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import Database from "better-sqlite3";
 import { makeTestDb } from "./helpers/d1";
 import { MERGE_FK_TABLES, MERGE_EXEMPT_TABLES } from "../src/storage/d1/d1-repo";
 
@@ -19,12 +20,56 @@ import { MERGE_FK_TABLES, MERGE_EXEMPT_TABLES } from "../src/storage/d1/d1-repo"
 const MIGRATIONS_DIR = resolve(process.cwd(), "migrations");
 const migrationFiles = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
 
+/** Migration filenames known to git, or null outside a checkout. */
+function trackedMigrations(): Set<string> | null {
+  try {
+    const out = execFileSync("git", ["ls-files", "migrations"], { encoding: "utf8" });
+    return new Set(out.split("\n").map((l) => l.trim().replace(/^migrations\//, "")).filter((f) => f.endsWith(".sql")));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Migrations to hold to the numbering rules: the COMMITTED ones.
+ *
+ * Deliberately not every file on disk. Several people work in this one checkout,
+ * and an untracked migration that briefly collides is someone mid-thought, not a
+ * defect — failing on it makes the suite hostile to work in progress and blocks
+ * unrelated pushes. What must never be wrong is what's committed, which is also
+ * exactly what CI (a fresh clone) sees. Falls back to all files outside a checkout.
+ */
+const numberedMigrations = (() => {
+  const tracked = trackedMigrations();
+  return tracked ? migrationFiles.filter((f) => tracked.has(f)) : migrationFiles;
+})();
+
 /** Tables in the live schema, from the real migrations. */
 function liveTables(raw: any): string[] {
   return raw
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
     .all()
     .map((r: any) => r.name);
+}
+
+/**
+ * A schema built from COMMITTED migrations only.
+ *
+ * `makeTestDb()` deliberately applies every .sql on disk, which is right for
+ * feature tests but wrong for reconciling a committed list against a schema: in a
+ * shared checkout it would demand that `d1-repo.ts` account for a table whose
+ * migration someone else hasn't committed yet — and naming it there would make a
+ * committed file depend on an uncommitted schema, which is the very thing the
+ * uncommitted-migration lock below forbids. Committed-vs-committed is the only
+ * self-consistent comparison, and it's what CI sees.
+ */
+function committedSchema(): any {
+  const tracked = trackedMigrations();
+  const files = tracked ? migrationFiles.filter((f) => tracked.has(f)) : migrationFiles;
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  for (const f of files) db.exec(readFileSync(resolve(MIGRATIONS_DIR, f), "utf8"));
+  return db;
 }
 
 describe("lock: dedup merge cannot silently delete data", () => {
@@ -39,7 +84,7 @@ describe("lock: dedup merge cannot silently delete data", () => {
    * either migrated or explicitly exempt with a reason.
    */
   it("every table that FK-references events(id) is either migrated on merge or explicitly exempt", () => {
-    const { raw } = makeTestDb();
+    const raw = committedSchema();
     const referencing: string[] = [];
     for (const t of liveTables(raw)) {
       const fks = raw.prepare(`PRAGMA foreign_key_list("${t}")`).all() as any[];
@@ -63,7 +108,7 @@ describe("lock: dedup merge cannot silently delete data", () => {
   it("names no table that has since been dropped", () => {
     // A stale entry means `UPDATE ... SET event_id` runs against a missing table
     // and throws mid-merge, leaving the catalog half-migrated.
-    const { raw } = makeTestDb();
+    const raw = committedSchema();
     const live = new Set(liveTables(raw));
     const ghosts = [...MERGE_FK_TABLES, ...Object.keys(MERGE_EXEMPT_TABLES)].filter((t) => !live.has(t));
     expect(ghosts, `Listed for merge but not in the schema: ${ghosts.join(", ")}`).toEqual([]);
@@ -126,18 +171,22 @@ describe("lock: migrations stay orderly", () => {
    */
   it("has no duplicate migration numbers", () => {
     const seen = new Map<string, string[]>();
-    for (const f of migrationFiles) {
+    for (const f of numberedMigrations) {
       const n = f.slice(0, 4);
       seen.set(n, [...(seen.get(n) ?? []), f]);
     }
     const dupes = [...seen.entries()].filter(([, fs]) => fs.length > 1);
-    expect(dupes.map(([n, fs]) => `${n}: ${fs.join(" + ")}`), "two migrations share a number").toEqual([]);
+    expect(
+      dupes.map(([n, fs]) => `${n}: ${fs.join(" + ")}`),
+      "Two committed migrations share a number. They apply in lexical order, so the " +
+        "collision is silent until the second one's dependencies don't exist yet.",
+    ).toEqual([]);
   });
 
   it("numbers migrations contiguously from 0001", () => {
     // A gap means a migration was deleted after being applied somewhere, so the
     // runner's bookkeeping and the directory disagree.
-    const nums = migrationFiles.map((f) => Number(f.slice(0, 4)));
+    const nums = numberedMigrations.map((f) => Number(f.slice(0, 4)));
     expect(nums).toEqual(nums.map((_, i) => i + 1));
   });
 

@@ -21,7 +21,10 @@ export interface ChatOpts {
 }
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
+// Only used when a caller passes no model at all. Kept in sync with
+// src/config/env.ts and verified live — a retired id here degrades every AI
+// feature to its deterministic core without any error surfacing.
+const DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash-lite";
 const WORKERS_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct";
 
 /** The exact HTTP request we send to OpenRouter — separated out so tests can

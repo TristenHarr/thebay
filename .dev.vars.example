@@ -11,9 +11,12 @@ DEV_LOGIN=1
 # Platform OpenRouter key — event tagging, vibe prediction, natural-language
 # search, identity-match ranking. Every one of those has a deterministic fallback,
 # so the site is fully functional without this.
+# Model ids ROT — a retired id returns 404 and every AI path degrades to its
+# deterministic core with no error surfaced, so check these first if AI seems inert.
+# Verify with: curl https://openrouter.ai/api/v1/models | grep <id>
 # OPENROUTER_API_KEY=
-# OPENROUTER_MODEL_FAST=            # high-volume: query parsing, bulk tagging
-# OPENROUTER_MODEL_QUALITY=         # low-volume: vibe prose, identity ranking
+# OPENROUTER_MODEL_FAST=google/gemini-2.5-flash-lite   # query parsing, bulk tagging
+# OPENROUTER_MODEL_QUALITY=google/gemini-2.5-flash     # vibe prose, identity ranking
 # LLM_DAILY_BUDGET_USD=5            # ceiling on platform-funded spend; over it, fall back
 
 # Cloudflare Access (email one-time-PIN login) — from your Zero Trust dashboard
