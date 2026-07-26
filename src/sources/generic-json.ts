@@ -13,6 +13,13 @@ const GenericJsonParams = z.object({
 });
 type GenericJsonParams = z.infer<typeof GenericJsonParams>;
 
+/** Fill time placeholders in a source URL at fetch time so a static config can
+ *  query time-relative APIs: `{{now}}` → ISO instant, `{{today}}` → YYYY-MM-DD. */
+export function resolveUrlTemplate(url: string, now: Date = new Date()): string {
+  const iso = now.toISOString();
+  return url.replace(/\{\{now\}\}/g, iso).replace(/\{\{today\}\}/g, iso.slice(0, 10));
+}
+
 /** Map one arbitrary JSON item onto a RawEvent via the source's fieldMap. Pure +
  *  exported so the mapping contract is unit-testable without a live fetch. */
 export function mapGenericItem(item: any, fieldMap: Record<string, string>, sourceId: string): RawEvent | null {
@@ -49,7 +56,7 @@ export const genericJsonAdapter: SourceAdapter<GenericJsonParams> = {
   },
   async fetchEvents(cfg, ctx) {
     const { url, itemsPath, fieldMap } = cfg.params;
-    const data = await fetchJson<any>(url);
+    const data = await fetchJson<any>(resolveUrlTemplate(url));
     const items = itemsPath ? getPath(data, itemsPath) : data;
     const list: any[] = Array.isArray(items) ? items : [];
 

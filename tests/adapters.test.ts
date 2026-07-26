@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mapLumaEvent } from "../src/sources/luma";
 import { extractAssignedJson, getResults, mapEbEvent } from "../src/sources/eventbrite";
 import { extractNextData, collectEvents, mapEvent as mapPartiful } from "../src/sources/partiful";
-import { mapGenericItem } from "../src/sources/generic-json";
+import { mapGenericItem, resolveUrlTemplate } from "../src/sources/generic-json";
 
 const cfg = (over: Record<string, unknown> = {}) => ({ id: "src-1", params: {}, ...over }) as any;
 
@@ -107,5 +107,11 @@ describe("generic-json adapter — mapGenericItem", () => {
     expect(mapGenericItem({ name: "x", link: "u" }, fieldMap, "c")).toBeNull(); // no start
     expect(mapGenericItem({ when: { start: "t" }, link: "u" }, fieldMap, "c")).toBeNull(); // no title
     expect(mapGenericItem({ name: "x", when: { start: "t" } }, fieldMap, "c")).toBeNull(); // no url
+  });
+  it("resolveUrlTemplate fills {{now}} / {{today}} for time-relative APIs (Cerebral Valley)", () => {
+    const now = new Date("2026-07-25T12:00:00Z");
+    expect(resolveUrlTemplate("https://api/e?after={{now}}", now)).toBe("https://api/e?after=2026-07-25T12:00:00.000Z");
+    expect(resolveUrlTemplate("https://api/e?d={{today}}", now)).toBe("https://api/e?d=2026-07-25");
+    expect(resolveUrlTemplate("https://api/e?static=1", now)).toBe("https://api/e?static=1");
   });
 });

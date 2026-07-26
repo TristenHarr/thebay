@@ -103,6 +103,27 @@
     "params": { "mode": "discover", "slugs": ["ai", "tech"], "latitude": 36.9741, "longitude": -122.0308, "maxPages": 4 }
   },
   {
+    "id": "cerebral-valley",
+    "type": "generic-json",
+    "enabled": true,
+    "note": "Cerebral Valley — the SF AI events community (hackathons, demo nights, meetups). Their public events API, sorted soonest-first; {{now}} keeps it to upcoming.",
+    "params": {
+      "url": "https://api.cerebralvalley.ai/v1/public/event/pull?approved=true&limit=100&startDateTime={{now}}",
+      "itemsPath": "events",
+      "fieldMap": {
+        "title": "name",
+        "startRaw": "startDateTime",
+        "endRaw": "endDateTime",
+        "url": "url",
+        "externalId": "id",
+        "description": "descriptionSummary",
+        "venueName": "venue",
+        "city": "location",
+        "imageUrl": "imageUrl"
+      }
+    }
+  },
+  {
     "id": "eb-terms",
     "type": "eventbrite",
     "enabled": true,
