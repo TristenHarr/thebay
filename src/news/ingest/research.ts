@@ -33,7 +33,29 @@ const FIELD_TOPIC: Record<string, string> = {
   economics: "vc",
 };
 
-export function searchUrl(ror: string, nowMs: number = Date.now(), days = 7, perPage = 10): string {
+/**
+ * How many of one institution's papers we keep, and how many of those are
+ * reserved for the site's axes.
+ *
+ * Sorting purely by citations hands the whole slot to biology — it's the
+ * highest-volume field, so the first live harvest returned three bio papers out
+ * of three and CS, math and hardware never appeared at all. Biotech IS Bay news
+ * and keeps its share; it just doesn't get to be the only thing.
+ */
+const PER_INSTITUTION = 10;
+const AXIS_RESERVED = 6;
+
+/** Split by whether the field maps to one of our axes, preserving citation order. */
+export function selectBalanced(stories: IngestedStory[], perInstitution = PER_INSTITUTION): IngestedStory[] {
+  const onAxis = stories.filter((s) => s.topics.length > 0);
+  const rest = stories.filter((s) => s.topics.length === 0);
+  const picked = onAxis.slice(0, AXIS_RESERVED);
+  // Unused axis slots go back to the general pool rather than shrinking the
+  // harvest — a quiet week for CS shouldn't mean a thin page.
+  return [...picked, ...rest.slice(0, perInstitution - picked.length)];
+}
+
+export function searchUrl(ror: string, nowMs: number = Date.now(), days = 7, perPage = 50): string {
   const since = new Date(nowMs - days * 86_400_000).toISOString().slice(0, 10);
   const p = new URLSearchParams({
     filter: `institutions.ror:${ror},from_publication_date:${since}`,
@@ -104,7 +126,7 @@ export async function fetchResearch(fetchImpl: typeof fetch = fetch, nowMs: numb
         headers: { accept: "application/json", "user-agent": `thebay.news (${OPENALEX_MAILTO})` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      out.push(...parseResearch(await res.json(), inst.name));
+      out.push(...selectBalanced(parseResearch(await res.json(), inst.name)));
     } catch (err) {
       const msg = `${(err as Error).message ?? err}`;
       // 429 is an infrastructure condition, not a bug: OpenAlex throttles by IP

@@ -849,3 +849,23 @@ describe("research degrades under rate limiting", () => {
     expect(out).toHaveLength(1);
   });
 });
+
+describe("research — keeping the axes visible", () => {
+  it("reserves slots for our axes instead of letting citations decide everything", async () => {
+    const { selectBalanced } = await import("../src/news/ingest/research");
+    // Citation order puts biology first; it is the highest-volume field.
+    const bio = Array.from({ length: 20 }, (_, i) => ({ title: `bio ${i}`, topics: [] as string[] }));
+    const cs = Array.from({ length: 5 }, (_, i) => ({ title: `cs ${i}`, topics: ["software"] }));
+    const picked = selectBalanced([...bio, ...cs] as any);
+    expect(picked).toHaveLength(10);
+    expect(picked.filter((s: any) => s.topics.length > 0)).toHaveLength(5);
+    // Biology is not excluded — it just doesn't take every slot.
+    expect(picked.filter((s: any) => s.topics.length === 0).length).toBeGreaterThan(0);
+  });
+
+  it("gives unused axis slots back rather than returning a thin page", async () => {
+    const { selectBalanced } = await import("../src/news/ingest/research");
+    const bio = Array.from({ length: 20 }, (_, i) => ({ title: `bio ${i}`, topics: [] as string[] }));
+    expect(selectBalanced(bio as any)).toHaveLength(10);
+  });
+});

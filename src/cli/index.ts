@@ -9,6 +9,9 @@ Usage:
 Commands:
   scrape [--source <id>]... [--no-tag] [--concurrency <n>]
                         Scrape enabled sources, dedupe, store, and tag.
+  scrape-news [--url <u>] [--token <t>] [--dry-run]
+                        Harvest sources that refuse Cloudflare's egress (OpenAlex)
+                        from this residential IP and push them to thebay.news.
   serve                 Start the local web dashboard.
   watch                 Run the scheduler (cron) + dashboard together.
   tag                   (Re)tag events that need it (changed / untagged).
@@ -28,6 +31,8 @@ async function main(): Promise<void> {
   switch (cmd) {
     case "scrape":
       return (await import("./scrape")).scrapeCommand(rest);
+    case "scrape-news":
+      return (await import("./scrape-news")).scrapeNewsCommand(rest);
     case "serve":
       return (await import("./serve")).serveCommand();
     case "watch":

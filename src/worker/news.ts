@@ -21,6 +21,7 @@ import type { Env, Vars } from "./env";
 import type { ScheduledController, ExecutionContext } from "@cloudflare/workers-types";
 import { harden } from "./security";
 import { runNewsIngest } from "../news/ingest";
+import { PushPayloadSchema } from "../news/ingest/push";
 import { canonicalOrigin, newsOrigin, apexRedirectUrl } from "./origin";
 import { authRoutes } from "./routes/auth";
 import { optionalAuth, requireAuth } from "../auth/middleware";
@@ -735,6 +736,26 @@ app.post("/api/admin/ingest-news", async (c) => {
   const token = c.env.INGEST_TOKEN;
   if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
   return c.json({ ok: true, ...(await runNewsIngest(c.env)) });
+});
+
+// Accept stories harvested on a residential IP. OpenAlex 429s the Worker's
+// shared Cloudflare egress but answers a laptop fine, so `npm run scrape-news`
+// fetches locally and posts here — the same bridge the events scraper uses for
+// Eventbrite. Narrow by construction: allowlisted origins, validated fields,
+// bounded batch. See src/news/ingest/push.ts for why each limit exists.
+app.post("/api/admin/push-news", async (c) => {
+  const token = c.env.INGEST_TOKEN;
+  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+
+  const parsed = PushPayloadSchema.safeParse(await c.req.json().catch(() => null));
+  // Reject the batch whole rather than applying the valid half — a partial write
+  // from a malformed payload is the state that's hardest to reason about later.
+  if (!parsed.success) {
+    return c.json({ error: "invalid", issues: parsed.error.issues.slice(0, 5) }, 400);
+  }
+
+  const res = await new NewsRepo(c.env.DB).upsertIngested(parsed.data.stories as any);
+  return c.json({ ok: true, received: parsed.data.stories.length, ...res });
 });
 
 // ── static assets + 404 ──────────────────────────────────────────────────────

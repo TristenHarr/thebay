@@ -118,6 +118,7 @@ const SOURCES: { key: NewsFeedSource; label: string }[] = [
   { key: "sec", label: "filings" },
   { key: "reddit", label: "reddit" },
   { key: "research", label: "research" },
+  { key: "fda", label: "fda" },
   { key: "event", label: "events" },
 ];
 

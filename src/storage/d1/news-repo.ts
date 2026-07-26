@@ -23,8 +23,36 @@ const nowIso = () => new Date().toISOString();
  * being invisible. Ranking a couple of thousand rows in JS is microseconds.
  */
 const HOT_CANDIDATES = 2000;
-/** Hot only considers the last week — older stories belong to /top, not the front page. */
+/** Hot only considers the last week — older stories belong to /top, not the front page.
+ *  Measured from first_seen_at (when the story reached us), NOT created_at (when it
+ *  happened at the source). Sources with publication lag — openFDA ships 510(k)
+ *  records ~2 weeks after the decision date on them — are otherwise born outside
+ *  the window and can never appear, however good they are. See 0013_first_seen. */
 const HOT_WINDOW_DAYS = 7;
+/**
+ * Origins whose `created_at` is the date the thing HAPPENED, not the date it was
+ * published. Regulatory and index data is released after the fact — openFDA ships
+ * 510(k) records ~2 weeks after the decision date, EDGAR backfills, GitHub dates a
+ * repo by creation. For these, "when did we learn it" is the honest freshness
+ * signal, so hot windows and decays on first_seen_at.
+ *
+ * Feed origins are deliberately NOT here. An RSS pubDate IS a publication time,
+ * so created_at is already right; and their failure mode is the opposite one —
+ * feeds emitting their archives. Production carries hn and rss items dated up to
+ * fourteen years back, and ranking those by when we fetched them would put 2012
+ * on the front page. Two different problems, two different rules.
+ */
+const LAGGING_ORIGINS = ["fda", "sec", "research", "github"] as const;
+/** SQL for "how fresh is this", per the rule above. Tolerant of rows predating the column. */
+const FRESHNESS_AT = `CASE WHEN s.origin IN (${LAGGING_ORIGINS.map((o) => `'${o}'`).join(",")})
+       THEN COALESCE(s.first_seen_at, s.created_at) ELSE s.created_at END`;
+/**
+ * Even a lagging source doesn't get to resurface antiquity: if the event itself
+ * is older than this, no amount of "we just found it" makes it news. It also
+ * stops a first-ever harvest of a backfilled dataset from dumping months of
+ * history onto the front page at once.
+ */
+const MAX_BACKDATE_DAYS = 60;
 
 export interface Story {
   id: string;
@@ -46,6 +74,8 @@ export interface Story {
   voteCount: number;
   commentCount: number;
   createdAt: string;
+  /** When this reached us. Ranking uses it; nothing displays it. */
+  firstSeenAt: string;
   authorId: string | null;
   author: string | null;
   handle: string | null;
@@ -55,6 +85,11 @@ export interface Story {
   /** Best score this story has on the source it came from. Derived from
    *  `sources` by attachSources so ranking and curation don't each re-walk it. */
   externalPoints?: number;
+}
+
+/** The timestamp hot should judge a story by. See LAGGING_ORIGINS. */
+export function freshnessOf(s: Pick<Story, "origin" | "createdAt" | "firstSeenAt">): string {
+  return (LAGGING_ORIGINS as readonly string[]).includes(s.origin) ? (s.firstSeenAt ?? s.createdAt) : s.createdAt;
 }
 
 export interface StorySourceRef {
@@ -93,7 +128,7 @@ export function slugify(title: string): string {
 }
 
 const SELECT_STORY = `
-  SELECT s.id, s.kind, s.title, s.url, s.slug, s.body, s.origin, s.event_id, s.summary,
+  SELECT s.id, s.kind, s.title, s.url, s.slug, s.body, s.origin, s.event_id, s.summary, s.first_seen_at,
          s.topics_json, s.image_url, s.description, s.site_name, s.favicon_url, s.published_at,
          s.vote_count, s.comment_count, s.created_at, s.author_id,
          u.display_name AS author, u.handle
@@ -123,6 +158,7 @@ function rowToStory(x: Row): Story {
     voteCount: x.vote_count ?? 0,
     commentCount: x.comment_count ?? 0,
     createdAt: x.created_at,
+    firstSeenAt: x.first_seen_at ?? x.created_at,
     authorId: x.author_id ?? null,
     author: x.author ?? null,
     handle: x.handle ?? null,
@@ -178,9 +214,13 @@ export class NewsRepo {
     let rows: Row[];
     if (opts.sort === "hot") {
       const since = new Date(nowMs - HOT_WINDOW_DAYS * 86_400_000).toISOString();
+      const backdateFloor = new Date(nowMs - MAX_BACKDATE_DAYS * 86_400_000).toISOString();
       const r = await this.db
-        .prepare(`${SELECT_STORY} WHERE ${where.join(" AND ")} AND s.created_at >= ? ORDER BY s.created_at DESC LIMIT ?`)
-        .bind(...binds, since, HOT_CANDIDATES)
+        .prepare(
+          `${SELECT_STORY} WHERE ${where.join(" AND ")} AND (${FRESHNESS_AT}) >= ? AND s.created_at >= ?
+             ORDER BY (${FRESHNESS_AT}) DESC LIMIT ?`,
+        )
+        .bind(...binds, since, backdateFloor, HOT_CANDIDATES)
         .all<Row>();
       rows = r.results ?? [];
     } else {
@@ -205,7 +245,10 @@ export class NewsRepo {
       const rankable: (Rankable & { _s: Story })[] = stories.map((s) => ({
         id: s.id,
         votes: s.voteCount,
-        createdAt: s.createdAt,
+        // Decay from the same instant the window used, or a lagging source clears
+        // the window only to score ~0 on arrival and sit at the bottom forever —
+        // reachable in theory, invisible in practice.
+        createdAt: freshnessOf(s),
         origin: s.origin,
         topics: s.topics,
         commentCount: s.commentCount,
@@ -238,8 +281,10 @@ export class NewsRepo {
     const countWhere = [...where];
     const countBinds = [...binds];
     if (opts.sort === "hot") {
-      countWhere.push("s.created_at >= ?");
+      countWhere.push(`(${FRESHNESS_AT}) >= ?`);
       countBinds.push(new Date(nowMs - HOT_WINDOW_DAYS * 86_400_000).toISOString());
+      countWhere.push("s.created_at >= ?");
+      countBinds.push(new Date(nowMs - MAX_BACKDATE_DAYS * 86_400_000).toISOString());
     }
     const total = await this.countStories(countWhere, countBinds);
     return { stories, total };
@@ -575,8 +620,8 @@ export class NewsRepo {
         storyId = ulid();
         await this.db
           .prepare(
-            `INSERT INTO stories (id, kind, title, url, url_hash, slug, origin, topics_json, published_at, author_name, created_at)
-             VALUES (?, 'link', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO stories (id, kind, title, url, url_hash, slug, origin, topics_json, published_at, author_name, created_at, first_seen_at)
+             VALUES (?, 'link', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             storyId,
@@ -589,6 +634,9 @@ export class NewsRepo {
             item.createdAt,
             item.author,
             item.createdAt,
+            // Set once, at insert. Never updated on re-ingest, so a story can't
+            // renew its own freshness by being re-fetched.
+            atIso,
           )
           .run();
         created++;

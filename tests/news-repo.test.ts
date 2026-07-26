@@ -203,3 +203,120 @@ describe("slugify", () => {
     expect(slugify("a".repeat(200)).length).toBeLessThanOrEqual(80);
   });
 });
+
+/**
+ * Sources that publish with lag.
+ *
+ * openFDA releases 510(k) records about two weeks after the decision date
+ * printed on them, so every clearance is born ~16 days "old". Hot windowed on
+ * created_at, so fourteen of them landed in production and not one could ever
+ * reach the front page. Nothing errored — the source was unreachable by
+ * construction, which is the kind of bug you only find by staring at an empty
+ * page and wondering.
+ */
+describe("lagging sources — ranked on when they reached us", () => {
+  let d1: any, repo: NewsRepo;
+  beforeEach(() => { ({ d1 } = makeTestDb()); repo = new NewsRepo(d1); });
+
+  /** A clearance decided 16 days ago, published by the source today. */
+  const laggy = () =>
+    repo.upsertIngested(
+      [{
+        origin: "fda", externalId: "K260123",
+        title: "Bay Medical cleared a device — Palo Alto, CA",
+        url: "https://accessdata.fda.gov/k260123", externalUrl: null,
+        points: null, comments: null,
+        createdAt: at(16 * 24), author: null, topics: ["hardware"],
+      }] as any,
+      new Date(NOW).toISOString(),
+    );
+
+  it("puts a story we just received on the front page, even though it is dated weeks ago", async () => {
+    await laggy();
+    const { stories } = await repo.feed({ src: "fda", sort: "hot", limit: 20, offset: 0 }, null, NOW);
+    expect(stories.map((s) => s.title)).toContain("Bay Medical cleared a device — Palo Alto, CA");
+  });
+
+  it("still DISPLAYS the real decision date, not the date we found it", async () => {
+    await laggy();
+    const { stories } = await repo.feed({ src: "fda", sort: "hot", limit: 20, offset: 0 }, null, NOW);
+    // The reader must see when the clearance happened. Only ranking uses first-seen.
+    expect(stories[0]!.createdAt).toBe(at(16 * 24));
+    expect(Date.parse(stories[0]!.firstSeenAt)).toBe(NOW);
+  });
+
+  it("counts what it can show — no '14 stories' above an empty page", async () => {
+    await laggy();
+    const hot = await repo.feed({ src: "fda", sort: "hot", limit: 20, offset: 0 }, null, NOW);
+    expect(hot.total).toBe(hot.stories.length);
+    // And a genuinely stale story is excluded from BOTH the list and the count.
+    const later = NOW + 30 * 86_400_000;
+    const stale = await repo.feed({ src: "fda", sort: "hot", limit: 20, offset: 0 }, null, later);
+    expect(stale.stories).toHaveLength(0);
+    expect(stale.total).toBe(0);
+  });
+
+  it("does not let a story renew its own freshness by being re-fetched", async () => {
+    await laggy();
+    // Same story, harvested again 10 days later — first_seen must not move.
+    await repo.upsertIngested(
+      [{
+        origin: "fda", externalId: "K260123",
+        title: "Bay Medical cleared a device — Palo Alto, CA",
+        url: "https://accessdata.fda.gov/k260123", externalUrl: null,
+        points: null, comments: null, createdAt: at(16 * 24), author: null, topics: [],
+      }] as any,
+      new Date(NOW + 10 * 86_400_000).toISOString(),
+    );
+    const { stories } = await repo.feed({ src: "fda", sort: "new", limit: 20, offset: 0 }, null, NOW);
+    expect(Date.parse(stories[0]!.firstSeenAt)).toBe(NOW);
+  });
+
+  it("does NOT do the same for feeds — an archived post is not news", async () => {
+    // Production carries hn and rss items dated up to fourteen years back, because
+    // feeds emit their archives. An RSS pubDate is a real publication time, so
+    // ranking these by when we fetched them would put 2012 on the front page.
+    await repo.upsertIngested(
+      [{
+        origin: "rss", externalId: "old-1", title: "A blog post from 2019",
+        url: "https://ex.com/2019-post", externalUrl: null, points: null, comments: null,
+        createdAt: new Date(NOW - 2200 * 86_400_000).toISOString(), author: null, topics: [],
+      }] as any,
+      new Date(NOW).toISOString(),
+    );
+    const { stories, total } = await repo.feed({ src: "rss", sort: "hot", limit: 20, offset: 0 }, null, NOW);
+    expect(stories).toHaveLength(0);
+    expect(total).toBe(0);
+    // Still reachable where old things belong.
+    const recent = await repo.feed({ src: "rss", sort: "new", limit: 20, offset: 0 }, null, NOW);
+    expect(recent.stories).toHaveLength(1);
+  });
+
+  it("won't let even a lagging source resurface antiquity", async () => {
+    // A first-ever harvest of a backfilled dataset must not dump months of
+    // history onto the front page just because all of it is new to us.
+    await repo.upsertIngested(
+      [{
+        origin: "fda", externalId: "K200001", title: "A clearance from last year — Oakland, CA",
+        url: "https://accessdata.fda.gov/k200001", externalUrl: null, points: null, comments: null,
+        createdAt: new Date(NOW - 300 * 86_400_000).toISOString(), author: null, topics: [],
+      }] as any,
+      new Date(NOW).toISOString(),
+    );
+    const { stories } = await repo.feed({ src: "fda", sort: "hot", limit: 20, offset: 0 }, null, NOW);
+    expect(stories).toHaveLength(0);
+  });
+
+  it("every origin the site can filter by is reachable from the UI", async () => {
+    // The 14 FDA stories were also unreachable for a duller reason: no chip
+    // rendered for them. A source we ingest but never link to is dead weight.
+    const { filterBar } = await import("../src/news/render/story");
+    const { NewsFeedSourceSchema } = await import("../shared/schema");
+    const bar = String(filterBar({ src: "bay", sort: "hot" }));
+    for (const src of (NewsFeedSourceSchema as any).options ?? []) {
+      expect(bar, `no filter chip links to ?src=${src}`).toMatch(
+        src === "bay" ? /href="\/"/ : new RegExp(`src=${src}\\b`),
+      );
+    }
+  });
+});

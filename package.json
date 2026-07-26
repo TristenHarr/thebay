@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The Bay — the founders × events social platform for the SF Bay Area, on Cloudflare.",
+  "description": "The Bay \u2014 the founders \u00d7 events social platform for the SF Bay Area, on Cloudflare.",
   "engines": {
     "node": ">=20 <23"
   },
@@ -50,7 +50,8 @@
     "new:feature": "node scripts/new-feature.mjs",
     "cap:sync": "npm run build-web && npx cap sync",
     "cap:ios": "npx cap open ios",
-    "cap:android": "npx cap open android"
+    "cap:android": "npx cap open android",
+    "scrape-news": "tsx src/cli/index.ts scrape-news"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
