@@ -1,6 +1,20 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { eventThumb } from "./thumb";
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+
+/** Event cover image, or a tasteful deterministic gradient + category glyph when
+ *  there's none — so a card is never blank. `className` sizes the box (the caller
+ *  owns width/height/rounding). */
+export function EventThumb({ event, className, glyph = 40 }: { event: { imageUrl?: string | null; id?: string; title?: string; categories?: string[] }; className?: string; glyph?: number }) {
+  if (event.imageUrl) return <img src={event.imageUrl} alt="" className={className} loading="lazy" />;
+  const t = eventThumb(event);
+  return (
+    <div className={cx("flex items-center justify-center", className)} style={{ background: t.background }} aria-hidden>
+      <span className="opacity-95 [text-shadow:0_1px_6px_rgba(0,0,0,0.25)]" style={{ fontSize: glyph }}>{t.glyph}</span>
+    </div>
+  );
+}
 
 export function Button({
   variant = "primary",

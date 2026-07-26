@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useGetEventFullQuery, useRsvpMutation, useReviewEventMutation, useGetEventMediaQuery, useGetResearchQuery } from "../../api";
-import { Card, Avatar, Chip, Button, Spinner, PageHeader, Badge, input } from "../../ui/kit";
+import { Card, Avatar, Chip, Button, Spinner, PageHeader, Badge, EventThumb, input } from "../../ui/kit";
 import { fmtDate } from "../feed/Feed";
 import { mediaUrl } from "../media/Media";
 
@@ -27,7 +27,7 @@ export function EventPage({ me }: { me: any }) {
 
   return (
     <div data-testid="event-page">
-      {e.imageUrl && <img src={e.imageUrl} alt="" className="mb-4 max-h-72 w-full rounded-lg object-cover" />}
+      <EventThumb event={e} className="mb-4 h-56 w-full rounded-lg object-cover" glyph={72} />
       <h1 className="text-2xl font-bold tracking-tight" style={{ textWrap: "balance" } as any}>{e.title}</h1>
       <div className="mt-1 font-mono text-sm text-muted">{fmtDate(e.startUtc, e.timezone)}{e.venueName ? ` · ${e.venueName}` : ""}</div>
       {data.host && (

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useGetEventsQuery, useFriendsFeedQuery, useRsvpMutation } from "../../api";
-import { Card, Avatar, Chip, Badge, SkeletonList, PageHeader, EmptyState, Button, input } from "../../ui/kit";
+import { Card, Avatar, Chip, Badge, SkeletonList, PageHeader, EmptyState, Button, EventThumb, input } from "../../ui/kit";
 import { fmtDate } from "../feed/Feed";
 import { baseFilter, categoryCounts, applyCategoryAndSort, communityCounts, COMMUNITY_LABELS, type DateKey, type TimeKey } from "./filter";
 import { useInfinite } from "../../ui/useInfinite";
@@ -97,7 +97,7 @@ export function Discover({ me }: { me: any }) {
           const friends = friendsByEvent.get(e.id) as any[] | undefined;
           return (
             <Card key={e.id} className="flex gap-3 overflow-hidden">
-              {e.imageUrl && <img src={e.imageUrl} alt="" className="w-28 shrink-0 object-cover" loading="lazy" />}
+              <EventThumb event={e} className="w-28 shrink-0 object-cover" glyph={34} />
               <div className="min-w-0 flex-1 p-3">
                 <div className="font-mono text-xs text-accent">{fmtDate(e.startUtc, e.timezone)}</div>
                 <h3 className="mt-0.5 font-semibold leading-snug"><Link to={`/event/${e.id}`} className="hover:text-accent">{e.title}</Link></h3>
