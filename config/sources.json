@@ -131,6 +131,20 @@
     "params": { "mode": "calendar", "url": "https://lu.ma/southparkcommons-events", "period": "future", "maxPages": 12 }
   },
   {
+    "id": "luma-yc",
+    "type": "luma",
+    "enabled": true,
+    "note": "Y Combinator public events — lu.ma/y-combinator (cal-qQSva6aLMmFpxES).",
+    "params": { "mode": "calendar", "url": "https://lu.ma/y-combinator", "period": "future", "maxPages": 12 }
+  },
+  {
+    "id": "luma-agihouse",
+    "type": "luma",
+    "enabled": true,
+    "note": "AGI House — SF AI hacker house (hackathons, demo days, jam sessions). lu.ma/agi-house (cal-Lv1pgYv5ITFR4tC).",
+    "params": { "mode": "calendar", "url": "https://lu.ma/agi-house", "period": "future", "maxPages": 12 }
+  },
+  {
     "id": "eb-terms",
     "type": "eventbrite",
     "enabled": true,
