@@ -16,6 +16,13 @@ export interface Env {
     idFromName(name: string): unknown;
     get(id: unknown): { fetch(request: Request): Promise<Response> };
   };
+  /** Shadows: one realtime Durable Object per geohash cell (live fan-out + per-cell
+   *  expiry). Optional so the Worker + tests boot without it — the HTTP API (D1) is
+   *  the durable backstop, so shadows render even if the realtime layer is absent. */
+  SHADOW_CELL?: {
+    idFromName(name: string): unknown;
+    get(id: unknown): { fetch(request: Request): Promise<Response> };
+  };
   // Static assets. Global fetch signature to avoid the workers-types Fetcher clash.
   ASSETS: { fetch(request: Request): Promise<Response> };
 

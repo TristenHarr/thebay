@@ -39,11 +39,18 @@
   ],
   // Avatars + event photos.
   "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "thebay-photos" }],
-  // One Durable Object per event group = real-time chat (WebSocket + hibernation).
+  // Durable Objects: one per event group = real-time chat; one per geohash cell =
+  // the live "shadows" board (sharded so no single hot object — infinitely scalable).
   "durable_objects": {
-    "bindings": [{ "name": "GROUP_ROOM", "class_name": "GroupRoom" }]
+    "bindings": [
+      { "name": "GROUP_ROOM", "class_name": "GroupRoom" },
+      { "name": "SHADOW_CELL", "class_name": "ShadowCell" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GroupRoom"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["GroupRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["ShadowCell"] }
+  ],
   // Workers AI — powers the (optional) event-brief & networking-agent phrasing.
   // The features degrade to their deterministic core when this is unavailable.
   "ai": { "binding": "AI" },

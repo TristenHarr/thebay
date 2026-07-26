@@ -27,6 +27,7 @@ import categoriesJson from "../../config/categories.json";
 import { KeywordTagger } from "../ai/keyword-tagger";
 
 export { GroupRoom } from "../realtime/group-room";
+export { ShadowCell } from "../realtime/shadow-cell";
 
 function parseFilter(q: Record<string, string>): EventFilter {
   const list = (v?: string) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : undefined);

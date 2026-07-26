@@ -23,6 +23,20 @@ const HEAT_MIN_P = 1;
 const HEAT_MAX_P = 7;
 const CELL_RE = /^[0-9bcdefghjkmnpqrstuvwxyz]{1,9}$/; // base32 geohash alphabet
 
+/** Best-effort realtime fan-out to a cell's Durable Object. D1 is the source of
+ *  truth, so a missed fan-out is cosmetic (the next GET / snapshot self-heals) —
+ *  it must never fail the write. No-op when the realtime binding isn't configured. */
+async function fanout(env: Env, cell: string, path: "publish" | "evict", payload: unknown): Promise<void> {
+  const ns = env.SHADOW_CELL;
+  if (!ns) return;
+  try {
+    const stub = ns.get(ns.idFromName(cell));
+    await stub.fetch(new Request(`https://do/${path}`, { method: "POST", body: JSON.stringify(payload) }) as any);
+  } catch {
+    /* realtime is progressive enhancement — swallow */
+  }
+}
+
 export function shadowsRoutes(): App {
   const app = new Hono<{ Bindings: Env; Variables: Partial<Vars> }>();
 
@@ -49,8 +63,20 @@ export function shadowsRoutes(): App {
   // The shadow you currently hold (drives the composer's "replace your shadow?").
   app.get("/api/shadows/mine", requireAuth, async (c) => c.json({ active: await repo(c).activeByAuthor(c.get("user")!.id) }));
 
+  // WebSocket upgrade → this cell's Durable Object (live {new}/{expire} deltas on top
+  // of the D1 snapshot the client already loaded). Signed-in — bounds live sockets to
+  // real accounts; anonymous viewers still get the (edge-cacheable) GET snapshot.
+  app.get("/api/shadows/ws", requireAuth, async (c) => {
+    const cell = (c.req.query("cell") || "").trim().toLowerCase();
+    if (!CELL_RE.test(cell)) return c.json({ error: "bad cell" }, 400);
+    const ns = c.env.SHADOW_CELL;
+    if (!ns) return c.json({ error: "realtime unavailable" }, 503);
+    const stub = ns.get(ns.idFromName(cell));
+    return stub.fetch(new Request("https://do/ws", c.req.raw as any) as any) as any;
+  });
+
   // Cast a shadow — signed in AND physically in the Bay (GPS gate). Replaces your
-  // previous shadow (1-per-account, handled in the repo).
+  // previous shadow (1-per-account, handled in the repo), then fans out to the cell DO.
   app.post("/api/shadows", requireAuth, async (c) => {
     const parsed = ShadowPostSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "bad shadow", issues: parsed.error.issues.slice(0, 5) }, 400);
@@ -60,7 +86,22 @@ export function shadowsRoutes(): App {
       const who = await new SocialRepo(c.env.DB).getUserById(s.connectionUserId);
       if (!who) return c.json({ error: "that person isn't on the Bay" }, 400);
     }
-    const res = await repo(c).post(c.get("user")!.id, { ...s, body: s.body?.trim() || null });
+    const author = c.get("user")!;
+    const body = s.body?.trim() || null;
+    const atIso = new Date().toISOString();
+    const res = await repo(c).post(author.id, { ...s, body }, atIso);
+
+    if (c.env.SHADOW_CELL) {
+      const shadow = {
+        id: res.id, authorId: author.id, lat: s.lat, lng: s.lng, cell: res.cell, kind: s.kind,
+        body, mediaKey: s.mediaKey ?? null, streamId: s.streamId ?? null, connectionUserId: s.connectionUserId ?? null,
+        createdAt: atIso, expiresAt: res.expiresAt,
+        author: { id: author.id, displayName: author.displayName, handle: author.handle, avatarKey: author.avatarKey ?? null },
+        reactions: {},
+      };
+      c.executionCtx.waitUntil(fanout(c.env, res.cell, "publish", shadow));
+      if (res.replaced) c.executionCtx.waitUntil(fanout(c.env, res.replaced.cell, "evict", { id: res.replaced.id }));
+    }
     return c.json({ ok: true, ...res });
   });
 
@@ -84,8 +125,15 @@ export function shadowsRoutes(): App {
     return c.json({ ok: true });
   });
 
-  // Delete your own shadow (no-op for anyone else).
-  app.delete("/api/shadows/:id", requireAuth, async (c) => c.json({ ok: true, deleted: await repo(c).deleteOwn(c.req.param("id"), c.get("user")!.id) }));
+  // Delete your own shadow (no-op for anyone else) + fade it from the live cell.
+  app.delete("/api/shadows/:id", requireAuth, async (c) => {
+    const id = c.req.param("id");
+    const uid = c.get("user")!.id;
+    const active = await repo(c).activeByAuthor(uid); // the one they hold (1-per-account)
+    const deleted = await repo(c).deleteOwn(id, uid);
+    if (deleted && c.env.SHADOW_CELL && active?.id === id) c.executionCtx.waitUntil(fanout(c.env, active.cell, "evict", { id }));
+    return c.json({ ok: true, deleted });
+  });
 
   return app;
 }
