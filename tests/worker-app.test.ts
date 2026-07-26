@@ -180,3 +180,25 @@ describe("prune out-of-region admin trigger (/api/admin/prune-out-of-region)", (
     expect(ids.sort()).toEqual(["keep", "online"]);
   });
 });
+
+describe("retag admin trigger (/api/admin/retag)", () => {
+  it("is bearer-gated and REPLACES categories with the fixed word-boundary tagger", async () => {
+    const { env, raw } = makeTestEnv({ INGEST_TOKEN: "secret" });
+    // seed an event that the OLD substring tagger mis-tagged 'software' (from 'ai' in 'Email')
+    raw.prepare(`INSERT INTO events (id, fingerprint, title, start_utc, timezone, city, url, categories, content_hash, tag_source, tagged_hash, first_seen_at, last_seen_at)
+                 VALUES ('e1','fp1','Email Marketing Workshop','2099-08-01T18:00:00Z','America/Los_Angeles','sf-bay','https://x', '["software","tech"]','ch1','keyword','ch1','2026-07-01','2026-07-01')`).run();
+    raw.prepare(`INSERT INTO events (id, fingerprint, title, start_utc, timezone, city, url, categories, content_hash, tag_source, tagged_hash, first_seen_at, last_seen_at)
+                 VALUES ('e2','fp2','Hardware Robotics Night','2099-08-01T18:00:00Z','America/Los_Angeles','sf-bay','https://x2', '[]','ch2',NULL,NULL,'2026-07-01','2026-07-01')`).run();
+
+    const url = "https://thebay.events/api/admin/retag";
+    expect((await app.fetch(new Request(url, { method: "POST" }), env as any)).status).toBe(401);
+
+    const ok = await app.fetch(new Request(url, { method: "POST", headers: { authorization: "Bearer secret" } }), env as any);
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as any).retagged).toBe(2);
+
+    // the false 'software' tag is GONE (replaced, not unioned); real tags applied
+    expect(JSON.parse((raw.prepare("SELECT categories FROM events WHERE id='e1'").get() as any).categories)).toEqual(["tech"]);
+    expect(JSON.parse((raw.prepare("SELECT categories FROM events WHERE id='e2'").get() as any).categories)).toContain("hardware");
+  });
+});

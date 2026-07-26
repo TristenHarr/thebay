@@ -293,6 +293,22 @@ export class D1Repo implements Repository {
     return (res.results ?? []).map(D1Repo.rowToCanonical);
   }
 
+  /**
+   * Re-tag every stored event with the given tagger, REPLACING categories (not
+   * unioning like the ingest merge does). Needed to correct tags across the whole
+   * catalog after the tagger changes — e.g. the substring→word-boundary fix that
+   * had "email"/"chair" false-tagged as software.
+   */
+  async retagAll(tagger: import("../../ai/tagger").Tagger): Promise<{ retagged: number }> {
+    const rows = (await this.db.prepare("SELECT id, title, description, organizer FROM events").all<Row>()).results ?? [];
+    if (!rows.length) return { retagged: 0 };
+    const results = await tagger.tag(rows.map((r) => ({ id: r.id, title: r.title, description: r.description ?? null, organizer: r.organizer ?? null })));
+    await this.applyTags(
+      results.map((r) => ({ id: r.id, categories: r.categories, interestScore: r.interestScore, interestReason: r.reason, tagSource: tagger.name })),
+    );
+    return { retagged: results.length };
+  }
+
   async applyTags(tags: TagInput[]): Promise<void> {
     if (!tags.length) return;
     const stmts = tags.map((t) =>

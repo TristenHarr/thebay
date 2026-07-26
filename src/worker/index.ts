@@ -23,6 +23,7 @@ import { makeCityResolver } from "../core/normalize/normalize";
 import { looksOutOfRegion } from "../core/normalize/region";
 import { UNKNOWN_CITY } from "../core/models/source";
 import categoriesJson from "../../config/categories.json";
+import { KeywordTagger } from "../ai/keyword-tagger";
 
 export { GroupRoom } from "../realtime/group-room";
 
@@ -146,6 +147,15 @@ app.post("/api/admin/prune-out-of-region", async (c) => {
   const token = c.env.INGEST_TOKEN;
   if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
   return c.json({ ok: true, ...(await new D1Repo(c.env.DB).pruneOutOfRegion(looksOutOfRegion)) });
+});
+
+// Re-tag the whole catalog (REPLACING categories) with the current keyword tagger.
+// Run after the tagger changes — ingest's merge unions categories, so it can add a
+// tag but never remove a stale one. Bearer-gated.
+app.post("/api/admin/retag", async (c) => {
+  const token = c.env.INGEST_TOKEN;
+  if (!token || c.req.header("authorization") !== `Bearer ${token}`) return c.json({ error: "unauthorized" }, 401);
+  return c.json({ ok: true, ...(await new D1Repo(c.env.DB).retagAll(new KeywordTagger(categoriesJson as any))) });
 });
 
 // Run warm-intros autopilot on demand (same work the cron does). Bearer-gated so
