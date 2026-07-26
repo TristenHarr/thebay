@@ -235,8 +235,11 @@ export class SocialRepo {
     return { status: r.status, incoming: r.requested_by !== me };
   }
   async listFriends(userId: string): Promise<PublicProfile[]> {
+    // No social_enabled filter: an accepted friend is your friend regardless of
+    // whether they've opted into public discovery (else they'd vanish from your
+    // list and their profile 404s — the "can't open my friend" bug).
     const res = await this.db
-      .prepare(`SELECT u.* FROM users u WHERE u.social_enabled = 1 AND u.id IN (${FRIEND_IDS_SQL}) ORDER BY u.display_name`)
+      .prepare(`SELECT u.* FROM users u WHERE u.id IN (${FRIEND_IDS_SQL}) ORDER BY u.display_name`)
       .bind(userId, userId, userId)
       .all<Row>();
     return (res.results ?? []).map((r) => toPublic(rowToUser(r)));

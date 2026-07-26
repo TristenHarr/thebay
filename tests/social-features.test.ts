@@ -14,6 +14,31 @@ async function befriend(t: TestApp, a: { cookie: string; user: any }, b: { cooki
   await call(t, `/api/friends/${a.user.id}/respond`, { method: "POST", cookie: b.cookie, body: { accept: true } });
 }
 
+describe("friend visibility — the social toggle gates public discovery, NOT friends", () => {
+  it("lets you open + list a friend's profile even if they never turned social on; strangers still 404", async () => {
+    const t = makeTestApp();
+    const ann = await login(t, "ann@x.com", "Ann");
+    const bob = await login(t, "bob@x.com", "Bob"); // Bob stays social-OFF (the DEFAULT)
+    await call(t, "/api/me", { method: "PATCH", cookie: ann.cookie, body: { socialEnabled: true } });
+    await befriend(t, ann, bob);
+
+    // A friend can open Bob's profile even though Bob is social-off.
+    // (Before the fix this 404'd → the profile page spun forever = "wasn't opening".)
+    const prof = await call(t, `/api/u/${bob.user.handle}`, { cookie: ann.cookie });
+    expect(prof.status).toBe(200);
+    expect(prof.json.profile.displayName).toBe("Bob");
+    expect(prof.json.friendStatus.status).toBe("accepted");
+
+    // …and Bob shows up in Ann's friends list.
+    const friends = await call(t, "/api/friends", { cookie: ann.cookie });
+    expect(friends.json.friends.map((f: any) => f.handle)).toContain(bob.user.handle);
+
+    // Privacy preserved: a stranger (no friendship) still cannot see social-off Bob.
+    const cara = await login(t, "cara@x.com", "Cara");
+    expect((await call(t, `/api/u/${bob.user.handle}`, { cookie: cara.cookie })).status).toBe(404);
+  });
+});
+
 describe("groups + real-time chat", () => {
   it("create → members-only access → messages persist and return", async () => {
     const t = makeTestApp({ GROUP_ROOM: DO_STUB });

@@ -61,16 +61,17 @@ export function socialRoutes(): App {
     const s = social(c);
     const target = await s.getUserByHandle(c.req.param("handle"));
     const me = c.get("user");
-    // your own profile is always visible to you, even before you enable social
-    if (!target || (!target.socialEnabled && target.id !== me?.id)) return c.json({ error: "not found" }, 404);
+    if (!target) return c.json({ error: "not found" }, 404);
+    // The social toggle gates PUBLIC discoverability — not friends. You can always
+    // see your own profile, and anyone you have a friendship (or pending request)
+    // with, even if they never turned social on. Strangers still can't see a
+    // social-off profile.
+    const rel = me && me.id !== target.id ? await s.friendStatus(me.id, target.id) : null;
+    const isSelf = target.id === me?.id;
+    if (!target.socialEnabled && !isSelf && !rel) return c.json({ error: "not found" }, 404);
     const { email: _e, ...pub } = target;
     void _e;
-    return c.json({
-      profile: pub,
-      points: await s.myPoints(target.id),
-      friendStatus: me && me.id !== target.id ? await s.friendStatus(me.id, target.id) : null,
-      isMe: me?.id === target.id,
-    });
+    return c.json({ profile: pub, points: await s.myPoints(target.id), friendStatus: rel, isMe: isSelf });
   });
 
   // ── friends ────────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ export function Profile({ self }: { self?: boolean }) {
   const { data: meData, refetch: refetchMe } = useGetMeQuery();
   const me = meData?.user;
   const handle = self ? me?.handle : params.handle;
-  const { data, refetch } = useGetProfileQuery(handle!, { skip: !handle });
+  const { data, refetch, isLoading, isError } = useGetProfileQuery(handle!, { skip: !handle });
   const { data: pubGoals } = useGetPublicGoalsQuery(handle!, { skip: !handle });
   const { data: pubAch } = useGetPublicAchievementsQuery(handle!, { skip: !handle });
   const { data: personReviews } = useGetPersonReviewsQuery(handle!, { skip: !handle });
@@ -28,9 +28,10 @@ export function Profile({ self }: { self?: boolean }) {
   const [form, setForm] = useState<any>({});
   const pwa = usePwaInstall();
 
-  if (!handle) return <Spinner />;
-  if (!data) return <Spinner />;
-  if (!data.profile) return <p className="text-muted">Profile not found.</p>;
+  // Only spin while actually loading — an error (e.g. a 404) must resolve to a
+  // clear message, never an infinite spinner (the "profile wouldn't open" bug).
+  if (!handle || isLoading) return <Spinner />;
+  if (isError || !data?.profile) return <p data-testid="profile" className="mt-8 text-center text-muted">Profile not found — this person may be private or no longer here.</p>;
   const p = data.profile;
 
   async function uploadAvatar(file: File) {
