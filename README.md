@@ -5,7 +5,12 @@
 Discover every Bay Area tech event, show up with intent, and turn attendance into
 relationships: goals, introductions, mentors, co-founders. Live at
 **[thebay.events](https://thebay.events)** (classic dashboard) and
-**[thebay.events/app](https://thebay.events/app)** (the social app).
+**[thebay.events/app](https://thebay.events/app)** (the social app), with a sibling
+Bay-native news site at **[thebay.news](https://thebay.news)** — two Cloudflare
+Workers in one repo (see **[ARCHITECTURE.md](./ARCHITECTURE.md)**).
+
+> Working on the codebase (human or AI)? Start with **[CLAUDE.md](./CLAUDE.md)** —
+> the operational quick-reference (commands, conventions, gotchas).
 
 [![CI](https://github.com/TristenHarr/thebay/actions/workflows/ci.yml/badge.svg)](https://github.com/TristenHarr/thebay/actions/workflows/ci.yml)
 [![Deploy](https://github.com/TristenHarr/thebay/actions/workflows/deploy.yml/badge.svg)](https://github.com/TristenHarr/thebay/actions/workflows/deploy.yml)
@@ -106,6 +111,15 @@ npm run geocode         # backfill event coordinates (Photon/OSM)
 npm run schedule:install  # macOS: run the daily scrape automatically (launchd, 08:00)
 npm run schedule:status   # is it scheduled? last exit code?
 ```
+
+**Coverage & quality** — the net spans the whole Bay Area **down into Santa Cruz county**
+(`config/cities.json` resolves every city to the region; the geo-fence covers it).
+Quality is enforced, not hoped for: exact-fingerprint **dedup** (`hash(title|day|city)`,
+0 duplicates in prod), a precision-first **out-of-region drop** (other-state/country
+noise, keeps venue-only/online Bay events), and **word-boundary tagging** (so `ai`
+doesn't false-match "email"). When `cities.json` or the tagger changes, correct
+stored data in place with the bearer-gated **`/api/admin/{renormalize,retag,prune-out-of-region}`**
+endpoints (ingest can't remove a stale tag/city on its own).
 
 **Observability** — every push records a run on production, so the pipeline isn't a
 black box: **`GET /api/scrape-status`** reports when it last ran, how many events it
