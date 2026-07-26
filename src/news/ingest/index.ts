@@ -25,7 +25,7 @@ import { fetchResearch } from "./research";
 import { fetchFda } from "./fda";
 import { fetchArxiv } from "./arxiv";
 import { fetchCrates } from "./crates";
-import { fetchFeeds, type FeedConfig } from "./rss";
+import { workerFeeds, fetchFeeds, type FeedConfig } from "./rss";
 import type { IngestedStory } from "./types";
 import feedsJson from "../../../config/news-feeds.json";
 import { summarizeStory } from "../summarize";
@@ -47,6 +47,8 @@ export interface IngestReport {
   /** Companies created from those filings. */
   companies: number;
   failures: string[];
+  /** Configured feeds that returned 200 and yielded nothing. Silent rot. */
+  emptyFeeds: string[];
 }
 
 /** How many stories get an AI summary per run — bounded so a cron tick stays cheap. */
@@ -57,6 +59,8 @@ const PREVIEW_BUDGET = 15;
 export async function runNewsIngest(env: Env, fetchImpl: typeof fetch = fetch): Promise<IngestReport> {
   const repo = new NewsRepo(env.DB);
   const failures: string[] = [];
+  /** Feeds that fetched fine and parsed to zero items — dead, but not loud about it. */
+  const emptyFeeds: string[] = [];
   const all: IngestedStory[] = [];
 
   // Form D refs harvested as a side-effect of the SEC news query — same response,
@@ -77,8 +81,12 @@ export async function runNewsIngest(env: Env, fetchImpl: typeof fetch = fetch): 
     ["arxiv", () => fetchArxiv(fetchImpl)],
     ["crates", () => fetchCrates(fetchImpl)],
     ["rss", async () => {
-      const { stories, failed } = await fetchFeeds(feedsJson as FeedConfig[], fetchImpl);
-      for (const f of failed) failures.push(`feed:${f}`);
+      const { stories, reasons, empty } = await fetchFeeds(workerFeeds(feedsJson as FeedConfig[]), fetchImpl);
+      for (const r of reasons) failures.push(`feed:${r}`);
+      // Reported SEPARATELY from failures. A feed that answers 200 and parses to
+      // nothing is broken, but it didn't error — folding it into `failures`
+      // buried the things that did, which is how a failure list stops being read.
+      emptyFeeds.push(...empty);
       return stories;
     }],
   ];
@@ -152,5 +160,5 @@ export async function runNewsIngest(env: Env, fetchImpl: typeof fetch = fetch): 
     failures.push(`summarize: ${(err as Error).message}`);
   }
 
-  return { fetched: all.length, feeds: (feedsJson as FeedConfig[]).length, created, merged, refreshed, events, previewed, summarized, filings, companies, failures };
+  return { fetched: all.length, feeds: (feedsJson as FeedConfig[]).length, emptyFeeds, created, merged, refreshed, events, previewed, summarized, filings, companies, failures };
 }

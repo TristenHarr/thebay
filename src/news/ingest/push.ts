@@ -40,8 +40,13 @@ const httpUrl = z
  * reach itself belong here — this is a workaround for network topology, not a
  * general-purpose insert API. Adding an origin here widens what a stolen token
  * can publish, so it should stay boring.
+ *
+ * `rss` joined `research` when huggingface.co started answering the Worker with
+ * 429 and this laptop with 200. Both are machine-aggregated feeds carrying no
+ * identity. What stays out is `bay` — that is what a person's own post looks
+ * like, and no token should be able to manufacture one.
  */
-export const PUSHABLE_ORIGINS = ["research"] as const;
+export const PUSHABLE_ORIGINS = ["research", "rss"] as const;
 
 /** Max stories per request. One institution's week is ~10; this is generous. */
 export const MAX_PUSH_BATCH = 200;

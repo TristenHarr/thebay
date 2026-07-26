@@ -349,7 +349,8 @@
     "topics": [
       "software"
     ],
-    "enabled": true
+    "enabled": true,
+    "local": true
   },
   {
     "id": "importai",

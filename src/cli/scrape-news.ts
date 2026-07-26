@@ -12,7 +12,9 @@
  */
 import { parseArgs } from "node:util";
 import { fetchResearch } from "../news/ingest/research";
+import { fetchFeeds, localFeeds, type FeedConfig } from "../news/ingest/rss";
 import { MAX_PUSH_BATCH } from "../news/ingest/push";
+import feedsJson from "../../config/news-feeds.json";
 
 export async function scrapeNewsCommand(argv: string[]): Promise<void> {
   const { values } = parseArgs({
@@ -27,6 +29,17 @@ export async function scrapeNewsCommand(argv: string[]): Promise<void> {
   console.log("Harvesting research (OpenAlex) locally …");
   const stories = await fetchResearch();
   console.log(`  ${stories.length} papers from Stanford, Berkeley and UCSF.`);
+
+  // Feeds flagged `local` in news-feeds.json: publishers that rate-limit
+  // Cloudflare's shared egress but answer this machine fine.
+  const all = ((feedsJson as any).feeds ?? feedsJson) as FeedConfig[];
+  const mine = localFeeds(all);
+  if (mine.length) {
+    const { stories: feedStories, reasons } = await fetchFeeds(mine);
+    console.log(`  ${feedStories.length} items from ${mine.length} local feed(s): ${mine.map((f) => f.id).join(", ")}.`);
+    for (const r of reasons) console.error(`  feed failed: ${r}`);
+    stories.push(...feedStories);
+  }
   if (!stories.length) {
     // Zero here means the query genuinely returned nothing — a 429 from a
     // residential IP would be a surprise worth seeing, so it throws rather than
@@ -46,7 +59,7 @@ export async function scrapeNewsCommand(argv: string[]): Promise<void> {
   }
 
   const url = baseUrl.replace(/\/+$/, "") + "/api/admin/push-news";
-  let created = 0, merged = 0, failed = 0;
+  let created = 0, merged = 0, refreshed = 0, failed = 0;
   for (let i = 0; i < stories.length; i += MAX_PUSH_BATCH) {
     const chunk = stories.slice(i, i + MAX_PUSH_BATCH);
     try {
@@ -62,13 +75,20 @@ export async function scrapeNewsCommand(argv: string[]): Promise<void> {
         failed += chunk.length;
         continue;
       }
-      const j = (await res.json()) as { created?: number; merged?: number };
+      const j = (await res.json()) as { created?: number; merged?: number; refreshed?: number };
       created += j.created ?? 0;
       merged += j.merged ?? 0;
+      // Report refreshes too. "0 new, 0 merged" on a successful push reads like
+      // the endpoint swallowed everything, when it means the catalog was already
+      // current — which is the normal outcome of running this twice.
+      refreshed += j.refreshed ?? 0;
     } catch (err) {
       console.error(`  batch failed: ${(err as Error).message}`);
       failed += chunk.length;
     }
   }
-  console.log(`Pushed to ${baseUrl}: ${created} new, ${merged} merged${failed ? `, ${failed} failed` : ""}.`);
+  console.log(
+    `Pushed to ${baseUrl}: ${created} new, ${merged} merged, ${refreshed} already current` +
+      `${failed ? `, ${failed} failed` : ""}.`,
+  );
 }

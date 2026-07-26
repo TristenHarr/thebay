@@ -93,7 +93,28 @@ export function parseFeed(xml: string, feedId = "rss", feedUrl?: string): Ingest
   return out;
 }
 
-export interface FeedConfig { id: string; url: string; topics?: string[]; enabled?: boolean; max?: number }
+export interface FeedConfig {
+  id: string;
+  url: string;
+  topics?: string[];
+  enabled?: boolean;
+  max?: number;
+  /**
+   * Harvest this one from a residential IP instead of from the Worker.
+   *
+   * Some publishers rate-limit by IP, and a Worker shares Cloudflare's egress
+   * with everyone on the platform, so it lands in someone else's bucket:
+   * huggingface.co answers a laptop with 200 and the Worker with 429, forever.
+   * The scheduled run skips these; `npm run scrape-news` collects them locally
+   * and pushes. Same bridge the events scraper uses for Eventbrite.
+   */
+  local?: boolean;
+}
+
+/** Feeds the Worker should attempt. The rest belong to the local harvester. */
+export const workerFeeds = (feeds: FeedConfig[]): FeedConfig[] => feeds.filter((f) => !f.local);
+/** Feeds only a residential IP can fetch. */
+export const localFeeds = (feeds: FeedConfig[]): FeedConfig[] => feeds.filter((f) => f.local && f.enabled !== false);
 
 /**
  * How many items to take from any one feed per run.
@@ -122,19 +143,34 @@ export const FEED_CONCURRENCY = 8;
 export async function fetchFeeds(
   feeds: FeedConfig[],
   fetchImpl: typeof fetch = fetch,
-): Promise<{ stories: IngestedStory[]; failed: string[] }> {
+): Promise<{ stories: IngestedStory[]; failed: string[]; reasons: string[]; empty: string[] }> {
   const active = feeds.filter((f) => f.enabled !== false);
   const stories: IngestedStory[] = [];
   const failed: string[] = [];
+  // WHY each one failed, kept separate so `failed` stays a plain list of ids for
+  // callers that only count them. "feed:huggingface" every fifteen minutes for a
+  // week told me nothing; "huggingface=HTTP 403" would have told me everything
+  // in one glance. Exactly the lesson OpenAlex taught.
+  const reasons: string[] = [];
+  /**
+   * Fetched fine, parsed to nothing. This is the DANGEROUS failure — it looks
+   * like success. logicaffeine.com answers every path, including /feed.xml, with
+   * its 182KB SPA shell and a 200; a feed like that would have sat in the config
+   * forever contributing zero stories and never appearing in any failure list.
+   */
+  const empty: string[] = [];
 
   const one = async (f: FeedConfig) => {
     try {
       const res = await fetchImpl(f.url, { headers: { accept: "application/rss+xml, application/xml, text/xml", "user-agent": USER_AGENT } });
-      if (!res.ok) throw new Error(String(res.status));
-      const items = parseFeed(await res.text(), f.id, f.url).slice(0, f.max ?? MAX_ITEMS_PER_FEED);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const parsed = parseFeed(await res.text(), f.id, f.url);
+      if (!parsed.length) empty.push(f.id);
+      const items = parsed.slice(0, f.max ?? MAX_ITEMS_PER_FEED);
       for (const it of items) stories.push(f.topics?.length ? { ...it, topics: f.topics } : it);
-    } catch {
+    } catch (err) {
       failed.push(f.id);
+      reasons.push(`${f.id}=${(err as Error).message ?? err}`.slice(0, 60));
     }
   };
 
@@ -145,6 +181,8 @@ export async function fetchFeeds(
   });
   await Promise.all(workers);
 
-  if (active.length && failed.length === active.length) throw new Error(`all ${active.length} feeds failed`);
-  return { stories, failed };
+  if (active.length && failed.length === active.length) {
+    throw new Error(`all ${active.length} feeds failed: ${reasons.slice(0, 3).join(" ")}`);
+  }
+  return { stories, failed, reasons, empty };
 }

@@ -88,9 +88,44 @@ export interface Curatable {
   id: string;
   origin: StoryOrigin;
   externalPoints?: number | null;
+  /** Used only to group a company's or a package's stories — see clusterKey. */
+  title?: string;
 }
 
 export const isLocal = (origin: StoryOrigin): boolean => LOCAL.includes(origin);
+
+/**
+ * What makes two stories "the same thing happening again".
+ *
+ * Scribe Therapeutics filed an S-1 and then two amendments, so the front page
+ * carried three near-identical rows ten days apart — all genuinely distinct
+ * filings, and all one piece of news to a reader. Same shape for packages: a
+ * crate that publishes twice in a week shouldn't take two slots.
+ *
+ * Returns null where repetition is normal — two HN stories about the same
+ * company are two different articles, and collapsing those would be censorship
+ * of the ordinary case rather than removal of noise.
+ */
+export function clusterKey(story: Curatable): string | null {
+  const title = (story.title ?? "").trim();
+  if (!title) return null;
+
+  if (story.origin === "sec") {
+    // "Scribe Therapeutics, Inc. (SCTX) filed a Form S-1/A — Alameda, CA"
+    // and "Scribe Therapeutics, Inc. filed to go public (S-1) — …" are one
+    // issuer; the ticker parenthetical appears on some filings and not others.
+    const issuer = title.split(/\s+filed\b/i)[0] ?? title;
+    return normalize(issuer);
+  }
+  if (story.origin === "crates") {
+    // "openlark-meeting v0.19.0 — …" → the package, not the release.
+    return normalize(title.split(/\s+v\d/)[0] ?? title);
+  }
+  return null;
+}
+
+const normalize = (s: string) =>
+  s.replace(/\([^)]*\)/g, " ").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() || null;
 
 /** Whether a story is good enough for the front page. */
 export function qualifies(story: Curatable): boolean {
@@ -146,18 +181,36 @@ export function curateFrontPage<T extends Curatable>(
 
   const taken = new Map<StoryOrigin, number>();
   const cursor = new Map<StoryOrigin, number>();
-  let progressed = true;
+  // One slot per company / per package, however many filings or releases it had.
+  const clustersUsed = new Set<string>();
+  for (const s of out) { const k = clusterKey(s); if (k) clustersUsed.add(k); }
 
+  /** Advance past anything whose cluster is already on the page. */
+  const nextFor = (origin: StoryOrigin): T | null => {
+    const bucket = buckets.get(origin)!;
+    let i = cursor.get(origin) ?? 0;
+    while (i < bucket.length) {
+      const cand = bucket[i]!;
+      const k = clusterKey(cand);
+      i++;
+      if (k && clustersUsed.has(k)) continue; // same issuer/package, already shown
+      cursor.set(origin, i);
+      if (k) clustersUsed.add(k);
+      return cand;
+    }
+    cursor.set(origin, i);
+    return null;
+  };
+
+  let progressed = true;
   while (out.length < limit && progressed) {
     progressed = false;
     for (const origin of cycle) {
       if (out.length >= limit) break;
-      const bucket = buckets.get(origin)!;
-      const i = cursor.get(origin) ?? 0;
-      if (i >= bucket.length) continue;
       if ((taken.get(origin) ?? 0) >= quotaFor(origin, remaining)) continue;
-      out.push(bucket[i]!);
-      cursor.set(origin, i + 1);
+      const pick = nextFor(origin);
+      if (!pick) continue;
+      out.push(pick);
       taken.set(origin, (taken.get(origin) ?? 0) + 1);
       progressed = true;
     }
@@ -167,8 +220,11 @@ export function curateFrontPage<T extends Curatable>(
   // short. Quotas shape a full page; they don't shrink it.
   if (out.length < limit) {
     for (const origin of cycle) {
-      const bucket = buckets.get(origin)!;
-      for (let i = cursor.get(origin) ?? 0; i < bucket.length && out.length < limit; i++) out.push(bucket[i]!);
+      while (out.length < limit) {
+        const pick = nextFor(origin);
+        if (!pick) break;
+        out.push(pick);
+      }
       if (out.length >= limit) break;
     }
   }

@@ -144,3 +144,56 @@ describe("the front page through the repo", () => {
     expect(hn.stories.every((x) => x.origin === "hn")).toBe(true);
   });
 });
+
+describe("one slot per company, per package", () => {
+  const s = (id: string, origin: any, title: string) => ({ id, origin, title, externalPoints: 999 });
+
+  it("shows a company's filing once, not once per amendment", async () => {
+    const { curateFrontPage, clusterKey } = await import("../src/news/curate");
+    // Real production data: an S-1 and two amendments, ten days apart. All
+    // genuinely distinct filings; all one piece of news.
+    const filings = [
+      s("a", "sec", "Scribe Therapeutics, Inc. (SCTX) filed a Form S-1/A — Alameda, CA"),
+      s("b", "sec", "Scribe Therapeutics, Inc. filed a Form S-1/A — Alameda, CA"),
+      s("c", "sec", "Scribe Therapeutics, Inc. filed to go public (S-1) — Alameda, CA"),
+      s("d", "sec", "Other Bio, Inc. filed a Form D — Oakland, CA"),
+    ];
+    expect(clusterKey(filings[0]!)).toBe(clusterKey(filings[1]!));
+    expect(clusterKey(filings[0]!)).toBe(clusterKey(filings[2]!)); // ticker parenthetical ignored
+    const page = curateFrontPage([], filings, 10);
+    expect(page.filter((x) => x.title!.includes("Scribe"))).toHaveLength(1);
+    expect(page.map((x) => x.id)).toContain("d"); // a different issuer still gets in
+  });
+
+  it("collapses repeat releases of one package", async () => {
+    const { curateFrontPage, clusterKey } = await import("../src/news/curate");
+    expect(clusterKey(s("x", "crates", "openlark-meeting v0.19.0 — a thing"))).toBe(
+      clusterKey(s("y", "crates", "openlark-meeting v0.20.1 — a thing")),
+    );
+    const page = curateFrontPage([], [
+      s("x", "crates", "openlark-meeting v0.19.0 — a thing"),
+      s("y", "crates", "openlark-meeting v0.20.1 — a thing"),
+      s("z", "crates", "other-crate v1.0.0 — different"),
+    ], 10);
+    expect(page).toHaveLength(2);
+  });
+
+  it("does NOT collapse ordinary articles about the same subject", async () => {
+    const { clusterKey } = await import("../src/news/curate");
+    // Two HN posts about one company are two different articles. Grouping those
+    // would remove the ordinary case, not the noise.
+    expect(clusterKey(s("h1", "hn", "OpenAI ships a thing"))).toBeNull();
+    expect(clusterKey(s("r1", "rss", "OpenAI ships a thing"))).toBeNull();
+  });
+
+  it("still fills the page when clustering removes candidates", async () => {
+    const { curateFrontPage } = await import("../src/news/curate");
+    const many = [
+      ...Array.from({ length: 8 }, (_, i) => s(`sec${i}`, "sec", `Same Co, Inc. filed a Form D ${i} — SF, CA`)),
+      ...Array.from({ length: 6 }, (_, i) => s(`hn${i}`, "hn", `An article ${i}`)),
+    ];
+    const page = curateFrontPage([], many, 6);
+    expect(page).toHaveLength(6);
+    expect(page.filter((x) => x.origin === "sec")).toHaveLength(1);
+  });
+});

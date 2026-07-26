@@ -60,3 +60,36 @@ describe("pushed stories", () => {
     expect(PushPayloadSchema.safeParse(mixed).success).toBe(false);
   });
 });
+
+describe("feeds the Worker cannot reach", () => {
+  it("routes flagged feeds away from the scheduled run and to the local one", async () => {
+    const { workerFeeds, localFeeds } = await import("../src/news/ingest/rss");
+    const feeds = [
+      { id: "normal", url: "https://a.example/feed.xml" },
+      { id: "huggingface", url: "https://huggingface.co/blog/feed.xml", local: true },
+      { id: "off", url: "https://b.example/feed.xml", local: true, enabled: false },
+    ];
+    expect(workerFeeds(feeds).map((f) => f.id)).toEqual(["normal"]);
+    expect(localFeeds(feeds).map((f) => f.id)).toEqual(["huggingface"]);
+  });
+
+  it("accepts a pushed rss item but still refuses a forged human post", async () => {
+    const { PushPayloadSchema } = await import("../src/news/ingest/push");
+    const item = (origin: string) => ({
+      stories: [{
+        origin, externalId: "huggingface:1", title: "A post on the HF blog",
+        url: "https://huggingface.co/blog/x", externalUrl: null, points: null,
+        comments: null, createdAt: "2026-07-26T00:00:00.000Z", author: null, topics: ["software"],
+      }],
+    });
+    expect(PushPayloadSchema.safeParse(item("rss")).success).toBe(true);
+    expect(PushPayloadSchema.safeParse(item("bay")).success).toBe(false);
+  });
+
+  it("every locally-flagged feed's origin is actually pushable", async () => {
+    // A feed flagged `local` that pushes as a non-allowlisted origin would be
+    // harvested every run and rejected every run, silently.
+    const { PUSHABLE_ORIGINS } = await import("../src/news/ingest/push");
+    expect(PUSHABLE_ORIGINS).toContain("rss");
+  });
+});
