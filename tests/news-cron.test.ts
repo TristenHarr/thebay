@@ -43,7 +43,7 @@ const PREVIEW_HTML = `<html lang="en"><head>
 </head></html>`;
 
 /** Route a fake fetch by URL, with per-host failure injection. */
-function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?: boolean; failPreviews?: boolean; failGithub?: boolean; failSec?: boolean } = {}) {
+function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?: boolean; failPreviews?: boolean; failGithub?: boolean; failSec?: boolean; failResearch?: boolean; failFda?: boolean } = {}) {
   return (async (input: any) => {
     const url = String(typeof input === "string" ? input : input.url ?? input);
     const json = (b: any) => new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
@@ -52,6 +52,17 @@ function fakeFetch(opts: { failHn?: boolean; failLobsters?: boolean; failFeeds?:
       // Show HN / Ask HN come from the same endpoint with a tag filter.
       if (url.includes("show_hn") || url.includes("ask_hn")) return json(HN_TAG_PAYLOAD);
       return json(HN_PAYLOAD);
+    }
+    if (url.includes("api.openalex.org")) {
+      if (opts.failResearch) return new Response("", { status: 429 });
+      return json({ results: [{ id: "https://openalex.org/W1", title: "A Bay paper", publication_date: "2026-07-24",
+        cited_by_count: 5, primary_topic: { field: { display_name: "Computer Science" } },
+        authorships: [{ author: { display_name: "Researcher" } }] }] });
+    }
+    if (url.includes("api.fda.gov")) {
+      if (opts.failFda) return new Response("", { status: 500 });
+      return json({ results: [{ k_number: "K260001", applicant: "Bay Medical", device_name: "A Device",
+        city: "SAN FRANCISCO", state: "CA", decision_date: "2026-07-22" }] });
     }
     if (url.includes("efts.sec.gov")) {
       if (opts.failSec) return new Response("", { status: 403 });
@@ -123,7 +134,7 @@ describe("runNewsIngest", () => {
   });
 
   it("still completes when EVERY source is down", async () => {
-    const r = await runNewsIngest(env, fakeFetch({ failHn: true, failLobsters: true, failFeeds: true, failGithub: true, failSec: true }));
+    const r = await runNewsIngest(env, fakeFetch({ failHn: true, failLobsters: true, failFeeds: true, failGithub: true, failSec: true, failResearch: true, failFda: true }));
     expect(r.failures.length).toBeGreaterThan(0);
     expect(r.created).toBe(0);
     expect(r).toHaveProperty("summarized"); // returned a report rather than throwing

@@ -23,6 +23,8 @@ const MARK_LABEL: Record<StoryOrigin, string> = {
   github: "gh",
   sec: "sec",
   reddit: "r/",
+  research: "paper",
+  fda: "fda",
 };
 
 /** Ours is turquoise, aggregated is neutral — local content leads the eye. */
@@ -115,6 +117,7 @@ const SOURCES: { key: NewsFeedSource; label: string }[] = [
   { key: "github", label: "code" },
   { key: "sec", label: "filings" },
   { key: "reddit", label: "reddit" },
+  { key: "research", label: "research" },
   { key: "event", label: "events" },
 ];
 

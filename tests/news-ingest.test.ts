@@ -11,6 +11,8 @@ import { parsePreview, harvestPreview } from "../src/news/ingest/preview";
 import { parseGithub, searchUrl } from "../src/news/ingest/github";
 import { parseSec, isBayLocation, searchUrl as secSearchUrl, FORMS as SEC_FORMS } from "../src/news/ingest/sec";
 import { parseReddit, fetchReddit, credsFrom } from "../src/news/ingest/reddit";
+import { parseResearch, fetchResearch, searchUrl as researchUrl } from "../src/news/ingest/research";
+import { parseFda, fetchFda, isBayCity } from "../src/news/ingest/fda";
 import { NewsRepo } from "../src/storage/d1/news-repo";
 import { SocialRepo } from "../src/storage/d1/social-repo";
 import { makeTestDb } from "./helpers/d1";
@@ -732,5 +734,118 @@ describe("SEC covers the whole funding lifecycle", () => {
     const hit = { _source: { ciks: ["1"], display_names: ["Acme Inc  (CIK 0000001)"], form: "S-1",
       file_date: "2026-07-21", biz_locations: ["San Francisco, CA"], adsh: "0000001-26-000001" } };
     expect(parseSec({ hits: { hits: [hit] } })[0]!.title).toContain("filed to go public (S-1)");
+  });
+});
+
+describe("research (OpenAlex, Bay institutions)", () => {
+  const payload = { results: [
+    { id: "https://openalex.org/W123", title: "A shorter proof of something", doi: "https://doi.org/10.1/abc",
+      publication_date: "2026-07-20", cited_by_count: 12, primary_topic: { field: { display_name: "Mathematics" } },
+      authorships: [{ author: { display_name: "A Mathematician" } }, { author: { display_name: "B" } }] },
+    { id: "https://openalex.org/W456", display_name: "A systems paper", publication_date: "2026-07-19",
+      cited_by_count: 3, primary_topic: { field: { display_name: "Computer Science" } },
+      primary_location: { landing_page_url: "https://ex.edu/paper" }, authorships: [{ author: { display_name: "Solo" } }] },
+    { id: "", title: "no id" },
+  ] };
+
+  it("maps works and names the institution in the title", () => {
+    const out = parseResearch(payload, "Stanford");
+    expect(out).toHaveLength(2);
+    expect(out[0]!.title).toBe("A shorter proof of something — Stanford");
+    expect(out[0]!.origin).toBe("research");
+  });
+
+  it("prefers a DOI, then a landing page", () => {
+    const out = parseResearch(payload, "Stanford");
+    expect(out[0]!.url).toBe("https://doi.org/10.1/abc");
+    expect(out[1]!.url).toBe("https://ex.edu/paper");
+  });
+
+  it("maps the field onto our axes", () => {
+    const out = parseResearch(payload, "Stanford");
+    expect(out[0]!.topics).toEqual(["math"]);
+    expect(out[1]!.topics).toEqual(["software"]);
+  });
+
+  it("renders a byline that reads like a paper", () => {
+    const out = parseResearch(payload, "Stanford");
+    expect(out[0]!.author).toBe("A Mathematician et al.");
+    expect(out[1]!.author).toBe("Solo");
+  });
+
+  it("filters by institution, and identifies us politely", () => {
+    const url = researchUrl("00f54p054", Date.parse("2026-07-25T00:00:00Z"));
+    expect(url).toContain("institutions.ror%3A00f54p054");
+    expect(url).toContain("from_publication_date%3A2026-07-18");
+    expect(url).toContain("mailto=contact%40thebay.news"); // OpenAlex's polite pool
+  });
+
+  it("tolerates junk", () => {
+    expect(parseResearch(null)).toEqual([]);
+    expect(parseResearch({ results: "nope" })).toEqual([]);
+  });
+});
+
+describe("fda (510(k) clearances)", () => {
+  const payload = { results: [
+    { k_number: "K261234", applicant: "Acme Medical", device_name: "Cardiac Monitor", city: "SAN FRANCISCO", state: "CA", decision_date: "2026-07-20" },
+    { k_number: "K261235", applicant: "SoCal Devices", device_name: "X", city: "SAN DIEGO", state: "CA", decision_date: "2026-07-20" },
+    { k_number: "K261236", applicant: "No Device Co", city: "Palo Alto", state: "CA", decision_date: "2026-07-18" },
+  ] };
+
+  it("keeps Bay applicants and drops the rest of California", () => {
+    const out = parseFda(payload);
+    expect(out.map((s) => s.title)).toEqual([
+      "Acme Medical cleared Cardiac Monitor — San Francisco, CA",
+      "No Device Co received FDA clearance — Palo Alto, CA",
+    ]);
+  });
+
+  it("links to the FDA's own clearance record", () => {
+    expect(parseFda(payload)[0]!.url).toContain("cfdocs/cfpmn/pmn.cfm?ID=K261234");
+  });
+
+  it("recognises Bay cities case-insensitively", () => {
+    expect(isBayCity("SAN FRANCISCO")).toBe(true);
+    expect(isBayCity(" palo alto ")).toBe(true);
+    expect(isBayCity("San Diego")).toBe(false);
+    expect(isBayCity("")).toBe(false);
+  });
+
+  it("treats openFDA's 404 as a quiet week, not a failure", async () => {
+    const fake = (async () => new Response("{}", { status: 404 })) as unknown as typeof fetch;
+    await expect(fetchFda(fake)).resolves.toEqual([]);
+  });
+
+  it("still throws on a real error", async () => {
+    const fake = (async () => new Response("", { status: 500 })) as unknown as typeof fetch;
+    await expect(fetchFda(fake)).rejects.toThrow(/fda 500/);
+  });
+});
+
+describe("research degrades under rate limiting", () => {
+  it("treats a 429 from every institution as a SKIP, not a failure", async () => {
+    // OpenAlex throttles by IP and a Worker shares egress with all of
+    // Cloudflare. Reporting that every 15 minutes would train us to ignore the
+    // failure list entirely.
+    const fake = (async () => new Response("", { status: 429 })) as unknown as typeof fetch;
+    await expect(fetchResearch(fake)).resolves.toEqual([]);
+  });
+
+  it("still reports a genuine error", async () => {
+    const fake = (async () => new Response("", { status: 500 })) as unknown as typeof fetch;
+    await expect(fetchResearch(fake)).rejects.toThrow(/500/);
+  });
+
+  it("keeps whatever DID succeed when only some are throttled", async () => {
+    let n = 0;
+    const fake = (async () => {
+      n++;
+      return n === 1
+        ? new Response(JSON.stringify({ results: [{ id: "https://openalex.org/W1", title: "A paper", publication_date: "2026-07-20" }] }), { status: 200 })
+        : new Response("", { status: 429 });
+    }) as unknown as typeof fetch;
+    const out = await fetchResearch(fake);
+    expect(out).toHaveLength(1);
   });
 });

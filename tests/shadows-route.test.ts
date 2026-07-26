@@ -165,6 +165,27 @@ describe("moderation", () => {
   });
 });
 
+describe("POST /api/shadows/media — ephemeral rich-content upload", () => {
+  it("stores a photo to R2 and the key round-trips into a photo shadow", async () => {
+    const { cookie } = await login(t, "ann@x.com", "Ann");
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    const up = await call(t, "/api/shadows/media?kind=photo", { method: "POST", cookie, raw: png, headers: { "content-type": "image/png" } });
+    expect(up.status).toBe(200);
+    expect(up.json.mediaKey).toMatch(/^shadows\//);
+    const posted = await call(t, "/api/shadows", { method: "POST", cookie, body: { ...SF, kind: "photo", mediaKey: up.json.mediaKey, body: "sunset at the hackathon" } });
+    expect(posted.status).toBe(200);
+    const read = await call(t, `/api/shadows?cells=${cellOf(SF)}`);
+    expect(read.json.shadows[0]).toMatchObject({ kind: "photo", mediaKey: up.json.mediaKey });
+  });
+
+  it("rejects a wrong content-type, an unknown kind, and video when unconfigured", async () => {
+    const { cookie } = await login(t, "ann@x.com", "Ann");
+    expect((await call(t, "/api/shadows/media?kind=photo", { method: "POST", cookie, raw: new Uint8Array([1]), headers: { "content-type": "text/plain" } })).status).toBe(400);
+    expect((await call(t, "/api/shadows/media?kind=bogus", { method: "POST", cookie, raw: new Uint8Array([1]), headers: { "content-type": "image/png" } })).status).toBe(400);
+    expect((await call(t, "/api/shadows/media?kind=video", { method: "POST", cookie, raw: new Uint8Array([1]), headers: { "content-type": "video/mp4" } })).status).toBe(503);
+  });
+});
+
 describe("GET /api/shadows/heat — zoomed-out aggregate", () => {
   it("groups active shadows by coarse cell and is edge-cacheable", async () => {
     const ann = await login(t, "ann@x.com", "Ann");

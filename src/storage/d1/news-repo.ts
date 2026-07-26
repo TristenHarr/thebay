@@ -231,7 +231,17 @@ export class NewsRepo {
     // Attribution must be present in the LIST, not just on the item page —
     // otherwise an aggregated story shows no credit to where it came from.
     await this.attachSources(stories);
-    const total = await this.countStories(where, binds);
+    // `total` must count the same rows the sort can actually show. Hot only
+    // considers the last week, so counting the whole table made ?src=fda report
+    // "14 stories" above an empty page — a source whose content is older than
+    // the window looked broken rather than quiet.
+    const countWhere = [...where];
+    const countBinds = [...binds];
+    if (opts.sort === "hot") {
+      countWhere.push("s.created_at >= ?");
+      countBinds.push(new Date(nowMs - HOT_WINDOW_DAYS * 86_400_000).toISOString());
+    }
+    const total = await this.countStories(countWhere, countBinds);
     return { stories, total };
   }
 

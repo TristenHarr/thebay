@@ -6,6 +6,7 @@ import { requireAuth, optionalAuth } from "../../auth/middleware";
 import { inBay } from "../../core/geo";
 import { ShadowPostSchema, ShadowReactSchema } from "../../../shared/schema";
 import { screenText, moderateText } from "../../ai/moderation";
+import { ulid } from "ulid";
 
 /**
  * Shadows — the ephemeral, location-sharded live board (see migrations/0011,
@@ -190,6 +191,44 @@ export function shadowsRoutes(): App {
     const ctx = bgCtx(c);
     if (deleted && active?.id === id && ctx) ctx.waitUntil(fanout(c.env, active.cell, "evict", { id }));
     return c.json({ ok: true, deleted });
+  });
+
+  // Ephemeral media upload for a rich shadow. Deliberately separate from the
+  // permanent events media library: a shadow's photo/voice/video lives and dies
+  // with the shadow (the cron GC deletes these R2 keys via deleteExpired). Returns
+  // the reference the composer then posts as { mediaKey } (photo/voice) or
+  // { streamId } (video). ?kind=photo|voice|video.
+  app.post("/api/shadows/media", requireAuth, async (c) => {
+    const uid = c.get("user")!.id;
+    const kind = c.req.query("kind");
+    const type = c.req.header("content-type") || "";
+
+    if (kind === "video") {
+      if (!c.env.STREAM_TOKEN || !c.env.CF_ACCOUNT_ID) return c.json({ error: "video not configured" }, 503);
+      const buf = await c.req.arrayBuffer();
+      if (buf.byteLength > 200_000_000) return c.json({ error: "too large" }, 413);
+      const up = await fetch(`https://api.cloudflare.com/client/v4/accounts/${c.env.CF_ACCOUNT_ID}/stream`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${c.env.STREAM_TOKEN}`, "content-type": type || "video/mp4" },
+        body: buf,
+      });
+      const j = (await up.json().catch(() => ({}))) as any;
+      const streamId = j?.result?.uid;
+      return streamId ? c.json({ ok: true, streamId }) : c.json({ error: "stream upload failed" }, 502);
+    }
+
+    if (kind === "photo" || kind === "voice") {
+      const want = kind === "photo" ? "image/" : "audio/";
+      if (!type.startsWith(want)) return c.json({ error: `${kind} requires ${want}* content` }, 400);
+      const buf = await c.req.arrayBuffer();
+      const cap = kind === "photo" ? 12_000_000 : 8_000_000;
+      if (buf.byteLength > cap) return c.json({ error: "too large" }, 413);
+      const key = `shadows/${uid}/${ulid()}`;
+      await c.env.PHOTOS.put(key, buf, { httpMetadata: { contentType: type } });
+      return c.json({ ok: true, mediaKey: key });
+    }
+
+    return c.json({ error: "kind must be photo, voice, or video" }, 400);
   });
 
   return app;

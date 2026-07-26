@@ -36,7 +36,9 @@ export const SUBMISSION: StoryOrigin = "bay";
  * local news by any reasonable reading — arguably more so than a Hacker News
  * link — so it belongs with ours rather than in the borrowed pile.
  */
-export const LOCAL: StoryOrigin[] = ["bay", "event", "sec"];
+// `fda` and `research` join `sec` as Bay-local: a clearance or a paper from a
+// Bay institution is local news that happens to be a filing.
+export const LOCAL: StoryOrigin[] = ["bay", "event", "sec", "fda", "research"];
 
 /**
  * Share of the page any one source may take, as a fraction of the slots left
@@ -52,7 +54,9 @@ export const QUOTA: Record<StoryOrigin, number> = {
   rss: 0.28,       // the publications we chose
   lobsters: 0.12,
   github: 0.12,
-  reddit: 0.18,   // large community, deliberately not dominant
+  reddit: 0.18,
+  research: 0.12,  // what Stanford/Berkeley/UCSF published
+  fda: 0.08,       // Bay device clearances — rare, so a small guaranteed slice   // large community, deliberately not dominant
 };
 
 /**
@@ -67,7 +71,9 @@ export const QUALITY_BAR: Record<string, number> = {
   hn: 80,
   lobsters: 15,
   github: 50,
-  reddit: 150,   // Reddit scores run high; 150 is a genuinely popular post
+  reddit: 150,
+  research: 0,     // inclusion is by INSTITUTION, which is the editorial call
+  fda: 0,   // Reddit scores run high; 150 is a genuinely popular post
   rss: 0,
   event: 0,
   sec: 0,
@@ -129,7 +135,7 @@ export function curateFrontPage<T extends Curatable>(
   // set, sources later in the list were starved to zero. Cycling takes each
   // source's next-best in turn, so every source is represented and the page
   // reads as a mix rather than as blocks of one source at a time.
-  const cycle: StoryOrigin[] = (["event", "hn", "rss", "sec", "github", "lobsters", "reddit"] as StoryOrigin[])
+  const cycle: StoryOrigin[] = (["event", "hn", "rss", "sec", "github", "lobsters", "reddit", "research", "fda"] as StoryOrigin[])
     .filter((o) => buckets.has(o));
   // Any source not in the fixed order still gets a turn.
   for (const o of buckets.keys()) if (!cycle.includes(o)) cycle.push(o);
