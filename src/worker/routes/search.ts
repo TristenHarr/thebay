@@ -27,6 +27,62 @@ type App = Hono<{ Bindings: Env; Variables: Partial<Vars> }>;
 
 const repo = (c: { env: Env }) => new SearchRepo(c.env.DB);
 
+export interface EnrichSliceResult {
+  scanned: number;
+  enriched: number;
+  tags: number;
+  embedded: number;
+  nextCursor: string | null;
+}
+
+/**
+ * One bounded slice of enrichment: tag + embed the next `limit` events needing it.
+ *
+ * Shared verbatim by `POST /api/admin/enrich` and the cron, so the scheduled job
+ * cannot drift from the endpoint the operator tests with. Bounded and resumable by
+ * id cursor — this is what replaced `retagAll`, which read every event in the
+ * catalog into Worker memory in a single request.
+ */
+export async function enrichSlice(
+  env: Env,
+  opts: { limit?: number; cursor?: string; force?: boolean; useLlm?: boolean } = {},
+): Promise<EnrichSliceResult> {
+  const r = new SearchRepo(env.DB);
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const vocab = await r.listVocab();
+  const candidates = await r.eventsNeedingEnrichment(limit, opts.cursor ?? "", opts.force ?? false);
+  if (!candidates.length) return { scanned: 0, enriched: 0, tags: 0, embedded: 0, nextCursor: null };
+
+  const enriched = await enrichEvents(candidates, vocab, {
+    useLlm: opts.useLlm ?? true,
+    model: { openrouterKey: env.OPENROUTER_API_KEY ?? null, model: env.OPENROUTER_MODEL_FAST ?? null, env },
+    cache: env.SESSIONS ?? null,
+    budget: env.LLM_DAILY_BUDGET_USD ? { kv: env.SESSIONS, dailyUsd: Number(env.LLM_DAILY_BUDGET_USD) || 0 } : null,
+  });
+  const written = await r.applyEnrichment(
+    enriched.map((e) => ({
+      id: e.id,
+      tags: e.tags,
+      interestScore: e.interestScore,
+      interestReason: e.interestReason,
+      tagSource: e.tagSource,
+      contentHash: e.contentHash,
+    })),
+  );
+
+  // Embeddings ride along on the same slice. No-op without VECTORIZE + AI.
+  const stored = await embedAndUpsert(candidates, env);
+  if (stored.length) await r.markEmbedded(stored);
+
+  return {
+    scanned: candidates.length,
+    enriched: written.events,
+    tags: written.tags,
+    embedded: stored.length,
+    nextCursor: candidates[candidates.length - 1]?.id ?? null,
+  };
+}
+
 /** Admin jobs are bearer-gated with INGEST_TOKEN, same as /api/admin/ingest. */
 const authed = (c: { env: Env; req: { header(n: string): string | undefined } }) => {
   const token = c.env.INGEST_TOKEN;
@@ -235,46 +291,13 @@ export function searchRoutes(): App {
    */
   app.post("/api/admin/enrich", async (c) => {
     if (!authed(c)) return c.json({ error: "unauthorized" }, 401);
-    const env = c.env;
-    const r = repo(c);
-    const limit = Math.min(Math.max(Number(c.req.query("limit")) || 50, 1), 200);
-    const cursor = c.req.query("cursor") ?? "";
-    const force = c.req.query("force") === "1";
-    const useLlm = c.req.query("llm") !== "0";
-
-    const vocab = await r.listVocab();
-    const candidates = await r.eventsNeedingEnrichment(limit, cursor, force);
-    if (!candidates.length) return c.json({ ok: true, scanned: 0, enriched: 0, tags: 0, embedded: 0, nextCursor: null });
-
-    const enriched = await enrichEvents(candidates, vocab, {
-      useLlm,
-      model: { openrouterKey: env.OPENROUTER_API_KEY ?? null, model: env.OPENROUTER_MODEL_FAST ?? null, env },
-      cache: env.SESSIONS ?? null,
-      budget: env.LLM_DAILY_BUDGET_USD ? { kv: env.SESSIONS, dailyUsd: Number(env.LLM_DAILY_BUDGET_USD) || 0 } : null,
+    const out = await enrichSlice(c.env, {
+      limit: Number(c.req.query("limit")) || 50,
+      cursor: c.req.query("cursor") ?? "",
+      force: c.req.query("force") === "1",
+      useLlm: c.req.query("llm") !== "0",
     });
-    const written = await r.applyEnrichment(
-      enriched.map((e) => ({
-        id: e.id,
-        tags: e.tags,
-        interestScore: e.interestScore,
-        interestReason: e.interestReason,
-        tagSource: e.tagSource,
-        contentHash: e.contentHash,
-      })),
-    );
-
-    // Embeddings ride along on the same slice. No-op without VECTORIZE + AI.
-    const stored = await embedAndUpsert(candidates, env);
-    if (stored.length) await r.markEmbedded(stored);
-
-    return c.json({
-      ok: true,
-      scanned: candidates.length,
-      enriched: written.events,
-      tags: written.tags,
-      embedded: stored.length,
-      nextCursor: candidates[candidates.length - 1]?.id ?? null,
-    });
+    return c.json({ ok: true, ...out });
   });
 
   /** Backfill/repair the FTS index. Triggers keep it in sync for live writes; this

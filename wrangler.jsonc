@@ -45,11 +45,18 @@
     { "binding": "PHOTOS", "bucket_name": "thebay-photos" },
     { "binding": "TILES", "bucket_name": "thebay-tiles" }
   ],
-  // Semantic event search. Commented until the index exists, because a binding to
-  // a missing Vectorize index breaks `wrangler dev`. `Env.VECTORIZE` is optional
-  // and search degrades to FTS5 + keyword without it, so this is safe to enable late.
+  // Semantic event search. 768-dim cosine, matching @cf/baai/bge-base-en-v1.5.
+  // Created with:
   //   npx wrangler vectorize create events-v1 --dimensions=768 --metric=cosine
-  // "vectorize": [{ "binding": "VECTORIZE", "index_name": "events-v1" }],
+  // `Env.VECTORIZE` stays optional and hybrid search falls back to FTS5 + keyword
+  // when the binding or the AI binding is absent, so a Vectorize outage degrades
+  // relevance rather than breaking search.
+  //
+  // NOTE: like `ai`, this binding reports "not supported" under `wrangler dev
+  // --local` — the vector leg is simply skipped locally and search runs on FTS5.
+  // That's the same degradation path production uses if Vectorize is unreachable,
+  // so local dev exercises it rather than diverging from it.
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "events-v1" }],
   // Durable Objects: one per event group = real-time chat; one per geohash cell =
   // the live "shadows" board (sharded so no single hot object — infinitely scalable).
   "durable_objects": {

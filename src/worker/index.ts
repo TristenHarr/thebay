@@ -25,6 +25,7 @@ import { looksOutOfRegion } from "../core/normalize/region";
 import { UNKNOWN_CITY } from "../core/models/source";
 import categoriesJson from "../../config/categories.json";
 import { KeywordTagger } from "../ai/keyword-tagger";
+import { enrichSlice } from "./routes/search";
 
 export { GroupRoom } from "../realtime/group-room";
 export { ShadowCell } from "../realtime/shadow-cell";
@@ -205,8 +206,28 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(new GraphRepo(env.DB).runIntroAutopilot());
     ctx.waitUntil(sweepExpiredShadows(env)); // GC shadows past their 24h + their media
+    ctx.waitUntil(enrichTick(env)); // tag + embed the next slice of freshly-scraped events
   },
 };
+
+/**
+ * Cron slice of tag/embed enrichment. Deliberately small: the scraper pushes in
+ * bursts, and one bounded slice per 15-minute tick drains a burst over a couple of
+ * hours while staying inside the Worker's CPU budget and the LLM spend guard. The
+ * work is idempotent on `content_hash`, so a tick that overlaps the previous one
+ * re-reads nothing.
+ *
+ * Shares `enrichSlice` with POST /api/admin/enrich — the operator's manual runs and
+ * the cron cannot diverge. Failures are swallowed: enrichment is catch-up work, and
+ * a throw here would take the autopilot and shadow sweep down with it.
+ */
+async function enrichTick(env: Env): Promise<void> {
+  try {
+    await enrichSlice(env, { limit: 50 });
+  } catch {
+    /* best-effort — untagged events stay candidates and the next tick retries */
+  }
+}
 
 /** Cron backstop: hard-delete shadows past their 24h and delete their R2 media.
  *  (Per-cell Durable Object alarms handle the *live* fade; this reaps the storage.) */
